@@ -120,10 +120,15 @@ void QCameraHardwareInterface::snapshot_jpeg_cb(jpeg_job_status_t status,
        ALOGE("%s: userdata is null", __func__);
        return;
     }
+
     QCameraHardwareInterface *pme = (QCameraHardwareInterface *)cookie->userdata;
     if(pme == NULL){
        ALOGE("%s: pme is null", __func__);
        return;
+    }
+    if(pme->mPreviewState == QCAMERA_HAL_PREVIEW_STOPPED){
+        ALOGE("Stop issued. Return from snapshot_jpeg_cb");
+        return;
     }
 
     /* no use of src frames, return them to kernel */
