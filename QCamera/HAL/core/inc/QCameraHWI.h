@@ -73,6 +73,9 @@ extern "C" {
 #define HISTOGRAM_STATS_SIZE 257
 #define NUM_HISTOGRAM_BUFFERS 3
 
+#define QCAMERA_ION_USE_CACHED true
+#define QCAMERA_ION_USE_UNCACHED false
+
 struct str_map {
     const char *const desc;
     int val;
@@ -545,9 +548,10 @@ public:
                     uint32_t buf_len,
                     int pmem_type,
                     mm_camera_frame_len_offset* offset,
-                    mm_camera_buf_def_t *buf_def);
+                    mm_camera_buf_def_t *buf_def,
+                    bool cached = QCAMERA_ION_USE_CACHED);
     int releaseHeapMem( QCameraHalHeap_t *heap);
-    int allocate_ion_memory(QCameraHalMemInfo_t * mem_info, int ion_type);
+    int allocate_ion_memory(QCameraHalMemInfo_t * mem_info, int ion_type, bool cached = QCAMERA_ION_USE_CACHED);
     int deallocate_ion_memory(QCameraHalMemInfo_t *mem_info);
 
     int cache_ops(QCameraHalMemInfo_t *mem_info,
