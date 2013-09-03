@@ -313,6 +313,7 @@ private:
     void getThumbnailSize(cam_dimension_t &dim);
     int getJpegQuality();
     int getJpegRotation();
+    void getOrientation();
     QCameraExif *getExifData();
 
     int32_t processAutoFocusEvent(cam_auto_focus_data_t &focus_data);
@@ -477,6 +478,7 @@ private:
     bool mLongshotEnabled;
 
     uint8_t mFlashNeeded;
+    int mCaptureRotation;
 };
 
 }; // namespace qcamera
