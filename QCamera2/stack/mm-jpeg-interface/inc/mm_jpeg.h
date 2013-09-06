@@ -313,6 +313,19 @@ typedef struct {
 
   OMX_EVENTTYPE omxEvent;
   int event_pending;
+
+  uint8_t *meta_enc_key;
+  uint32_t meta_enc_keylen;
+
+  struct mm_jpeg_job_session *next_session;
+
+  uint32_t curr_out_buf_idx;
+
+  uint32_t num_omx_sessions;
+  OMX_BOOL auto_out_buf;
+
+  mm_jpeg_queue_t *session_handle_q;
+  mm_jpeg_queue_t *out_buf_q;
 } mm_jpeg_job_session_t;
 
 typedef struct {
