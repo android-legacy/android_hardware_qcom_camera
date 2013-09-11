@@ -1,0 +1,33 @@
+From 062dd6dfd45ce8891b8fcdd6d8b730ea23139584 Mon Sep 17 00:00:00 2001
+From: liangche <liangchen@codeaurora.org>
+Date: Mon, 10 Mar 2014 15:55:13 +0800
+Subject: [PATCH 105/176] Qcamera2: Remove AE-bracket when the sensor is YUV
+ sensor
+
+As YUV sensor don't support AE-bracket, need remove the item from UI.
+MCT_pipeline had added a flag histogram_supported to show the sensor type,
+so can reuse the flag to decide whether the sensor support AE-bracket or not.
+
+Change-Id: I95b164a65ef814d4d3eb857e9f41282c343db3eb
+CRs-fixed: 622465
+---
+ QCamera2/HAL/QCameraParameters.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 552cb5a..ce68a67 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -3771,7 +3771,8 @@ int32_t QCameraParameters::initDefaultParameters()
+     String8 bracketingValues = createValuesStringFromMap(
+             BRACKETING_MODES_MAP,
+             sizeof(BRACKETING_MODES_MAP) / sizeof(QCameraMap));
+-    set(KEY_QC_SUPPORTED_AE_BRACKET_MODES, bracketingValues);
++    set(KEY_QC_SUPPORTED_AE_BRACKET_MODES,
++        m_pCapability->histogram_supported ? bracketingValues : "");
+     setAEBracket(AE_BRACKET_OFF);
+ 
+     // Set Denoise
+-- 
+1.8.3.1
+

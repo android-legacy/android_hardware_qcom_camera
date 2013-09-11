@@ -1,0 +1,33 @@
+From 4f19f1ffe7fb6acbed8ee8e4f33367cd3508ad57 Mon Sep 17 00:00:00 2001
+From: Suman Mukherjee <sumam@codeaurora.org>
+Date: Wed, 26 Nov 2014 09:33:44 +0530
+Subject: [PATCH 145/176] QCamera2:Add NULL check in release_recording_frame
+
+release_recording_frame is not checking for NULL frame info. Fixed
+the same.
+
+Change-Id: I02e0d89ce5bd12412ff183973a25bf11aeb59632
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 921f384..606543b 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -509,6 +509,12 @@ void QCamera2HardwareInterface::release_recording_frame(
+         ALOGE("NULL camera device");
+         return;
+     }
++
++    if (opaque == NULL) {
++        ALOGE("%s: Error!! Frame info is NULL", __func__);
++        return;
++    }
++
+     ALOGD("%s: E", __func__);
+     hw->lockAPI();
+     int32_t ret = hw->processAPI(QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME, (void *)opaque);
+-- 
+1.8.3.1
+

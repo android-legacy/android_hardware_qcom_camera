@@ -1,0 +1,38 @@
+From e10a9fcdccbd67a5a54a0cd26bf057114e26301f Mon Sep 17 00:00:00 2001
+From: Stefan Stefanov <sstefa@codeaurora.org>
+Date: Mon, 11 Nov 2013 10:55:22 +0200
+Subject: [PATCH 071/176] Camera: Add CAM_AF_STATE_PASSIVE_UNFOCUSED to AF
+ states
+
+Add a new AF state to the cam_af_state_t enum.
+
+Change-Id: Icba18aff3692f91f16cf0674f5e762c61b5751a5
+---
+ QCamera2/stack/common/cam_types.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 8757203..4297bb7 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -1225,6 +1225,7 @@ typedef struct {
+     int32_t left;
+     int32_t top;
+     int32_t width;
++    int32_t height;
+ } cam_crop_region_t;
+ 
+ typedef struct {
+@@ -1385,7 +1386,8 @@ typedef enum {
+     CAM_AF_STATE_PASSIVE_FOCUSED,
+     CAM_AF_STATE_ACTIVE_SCAN,
+     CAM_AF_STATE_FOCUSED_LOCKED,
+-    CAM_AF_STATE_NOT_FOCUSED_LOCKED
++    CAM_AF_STATE_NOT_FOCUSED_LOCKED,
++    CAM_AF_STATE_PASSIVE_UNFOCUSED
+ } cam_af_state_t;
+ 
+ typedef enum {
+-- 
+1.8.3.1
+

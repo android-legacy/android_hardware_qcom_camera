@@ -1,0 +1,96 @@
+From 2849273b5351d4f07aa65f16a0b0898ba148b465 Mon Sep 17 00:00:00 2001
+From: Ranjith Kagathi Ananda <ranjith@codeaurora.org>
+Date: Tue, 18 Feb 2014 16:22:38 -0800
+Subject: [PATCH 130/176] QCamera2/stack/mm-camera-interface: Enable/disable
+ debug logs runtime
+
+- adds the property "persist.camera.logs". This chooses debug
+log level and this will not affect the error logs
+- 0: turns off CDBG and CDBG_HIGH logs
+- 1: turns-on CDBG_HIGH logs
+- 2: turns-on CDBG_HIGH and CDBG logs
+- Defualt  value set to 1(CDBG_HIGH turn on)
+
+Change-Id: I0aaf71a0df84aa0474d313722933573dd3221c2f
+---
+ QCamera2/stack/mm-camera-interface/inc/mm_camera_dbg.h      | 13 +++++++++----
+ .../stack/mm-camera-interface/src/mm_camera_interface.c     |  7 +++++++
+ 2 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/inc/mm_camera_dbg.h b/QCamera2/stack/mm-camera-interface/inc/mm_camera_dbg.h
+index 4f3c94f..3b8c06a 100755
+--- a/QCamera2/stack/mm-camera-interface/inc/mm_camera_dbg.h
++++ b/QCamera2/stack/mm-camera-interface/inc/mm_camera_dbg.h
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012, 2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -30,7 +30,12 @@
+ #ifndef __MM_CAMERA_DBG_H__
+ #define __MM_CAMERA_DBG_H__
+ 
+-//#define LOG_DEBUG 1
++#define LOG_DEBUG 1
++/* Choose debug log level. This will not affect the error logs
++   0: turns off CDBG and CDBG_HIGH logs
++   1: turns-on CDBG_HIGH logs
++   2: turns-on CDBG_HIGH and CDBG logs */
++extern volatile uint32_t gMmCameraIntfLogLevel;
+ 
+ #ifndef LOG_DEBUG
+   #ifdef _ANDROID_
+@@ -53,7 +58,7 @@
+     #define LOG_NIDEBUG 0
+     #define LOG_TAG "mm-camera-intf"
+     #include <utils/Log.h>
+-    #define CDBG(fmt, args...) ALOGE(fmt, ##args)
++    #define CDBG(fmt, args...) ALOGD_IF(gMmCameraIntfLogLevel >= 2, fmt, ##args)
+   #else
+     #include <stdio.h>
+     #define CDBG(fmt, args...) fprintf(stderr, fmt, ##args)
+@@ -62,7 +67,7 @@
+ #endif
+ 
+ #ifdef _ANDROID_
+-  #define CDBG_HIGH(fmt, args...)  ALOGD(fmt, ##args)
++  #define CDBG_HIGH(fmt, args...) ALOGD_IF(gMmCameraIntfLogLevel >= 1, fmt, ##args)
+   #define CDBG_ERROR(fmt, args...)  ALOGE(fmt, ##args)
+ #else
+   #define CDBG_HIGH(fmt, args...) fprintf(stderr, fmt, ##args)
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+index 0ee6b3d..acd58fd 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+@@ -35,6 +35,8 @@
+ #include <fcntl.h>
+ #include <poll.h>
+ #include <linux/media.h>
++#include <cutils/properties.h>
++#include <stdlib.h>
+ 
+ #include "mm_camera_dbg.h"
+ #include "mm_camera_interface.h"
+@@ -47,6 +49,7 @@ static mm_camera_ctrl_t g_cam_ctrl = {0, {{0}}, {0}, {{0}}};
+ 
+ static pthread_mutex_t g_handler_lock = PTHREAD_MUTEX_INITIALIZER;
+ static uint16_t g_handler_history_count = 0; /* history count for handler */
++volatile uint32_t gMmCameraIntfLogLevel = 0;
+ 
+ /*===========================================================================
+  * FUNCTION   : mm_camera_util_generate_handler
+@@ -1274,6 +1277,10 @@ uint8_t get_num_of_cameras()
+     struct media_device_info mdev_info;
+     int num_media_devices = 0;
+     uint8_t num_cameras = 0;
++    char prop[PROPERTY_VALUE_MAX];
++
++    property_get("persist.camera.logs", prop, "1");
++    gMmCameraIntfLogLevel = atoi(prop);
+ 
+     CDBG("%s : E", __func__);
+     /* lock the mutex */
+-- 
+1.8.3.1
+

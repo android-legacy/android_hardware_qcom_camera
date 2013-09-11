@@ -1,0 +1,50 @@
+From bc82afafd0c0174c1e58ab47211a891608f9968f Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Mon, 24 Feb 2014 18:14:14 +0530
+Subject: [PATCH 097/176] Camera: Reset current focus state in stopPreview.
+
+Focus state has to be reset during stoppreview. Otherwise, next
+time when we restart preview, previous focus state will be
+used which is not valid. This might cause cancelAF to block
+indefinitely, if previous focus state happens to focusing state.
+This can lead to ANR in stoppreview.
+
+Change-Id: I5a0e02c245e44ff4d89612c1001ae02baaf3cfe3
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index d114049..ec36e55 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -572,6 +572,7 @@ int QCamera2HardwareInterface::cancel_auto_focus(struct camera_device *device)
+         ALOGE("NULL camera device");
+         return BAD_VALUE;
+     }
++    ALOGE("[KPI Perf] %s : E PROFILE_CANCEL_AUTO_FOCUS", __func__);
+     hw->lockAPI();
+     ret = hw->processAPI(QCAMERA_SM_EVT_STOP_AUTO_FOCUS, NULL);
+     if (ret == NO_ERROR) {
+@@ -579,7 +580,7 @@ int QCamera2HardwareInterface::cancel_auto_focus(struct camera_device *device)
+         ret = hw->m_apiResult.status;
+     }
+     hw->unlockAPI();
+-
++    ALOGD("[KPI Perf] %s : X", __func__);
+     return ret;
+ }
+ 
+@@ -1900,6 +1901,9 @@ int QCamera2HardwareInterface::stopPreview()
+ 
+     // delete all channels from preparePreview
+     unpreparePreview();
++
++    //reset focus state
++    m_currentFocusState = CAM_AF_NOT_FOCUSED;
+     ALOGD("%s: X", __func__);
+     return NO_ERROR;
+ }
+-- 
+1.8.3.1
+

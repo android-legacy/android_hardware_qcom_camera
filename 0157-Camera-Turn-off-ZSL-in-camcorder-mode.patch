@@ -1,0 +1,28 @@
+From 668272bd657f7012b48511ca8eae6c5576c24b7f Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Mon, 18 Feb 2013 13:33:20 +0530
+Subject: [PATCH 157/176] Camera : Turn off ZSL in camcorder mode.
+
+Change-Id: I4acf22c24b4903865a1649a3c1f93ab98cf09f62
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index 851dc28..fccf9a5 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -3361,6 +3361,10 @@ status_t QCameraHardwareInterface::setRecordingHintValue(const int32_t value)
+     }
+     setDISMode();
+     setFullLiveshot();
++
++    if(value) {
++        myMode = (camera_mode_t)(myMode & ~CAMERA_ZSL_MODE);
++    }
+     return NO_ERROR;
+ }
+ 
+-- 
+1.8.3.1
+

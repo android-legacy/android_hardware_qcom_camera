@@ -1,0 +1,25 @@
+From 8efb1f511f0c8e452628038160b37132a27bef4d Mon Sep 17 00:00:00 2001
+From: erikcas <erikcas1972@gmail.com>
+Date: Fri, 3 Apr 2015 23:57:28 +0200
+Subject: [PATCH 152/176] SOMC_PLATFORM
+
+---
+ QCamera2/HAL/Android.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 336cb54..5d1d698 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -76,7 +76,7 @@ LOCAL_SHARED_LIBRARIES := libcamera_client liblog libhardware libutils libcutils
+ LOCAL_SHARED_LIBRARIES += libmmcamera_interface libmmjpeg_interface
+ 
+ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+-LOCAL_MODULE := camera.$(TARGET_BOARD_PLATFORM)
++LOCAL_MODULE := camera.$(SOMC_PLATFORM)
+ LOCAL_MODULE_TAGS := optional
+ 
+ include $(BUILD_SHARED_LIBRARY)
+-- 
+1.8.3.1
+

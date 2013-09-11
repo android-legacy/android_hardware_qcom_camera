@@ -1,0 +1,1522 @@
+From a60b21df5ddab2353614a08d03ff2126dfafa0fa Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 13 Jan 2014 23:51:07 -0800
+Subject: [PATCH 091/176] Revert "QCamera2: Add Deffered work thread"
+
+This reverts commit 2a5e6e53358bfd62731cf847db613bab451db3c9.
+
+Change-Id: I09ca7816db2371c9ff404770ab3856f776929ee3
+---
+ QCamera2/HAL/Android.mk                     |   1 +
+ QCamera2/HAL/QCamera2HWI.cpp                | 343 ++------------------------
+ QCamera2/HAL/QCamera2HWI.h                  |  52 ----
+ QCamera2/HAL/QCamera2HWICallbacks.cpp       |   3 -
+ QCamera2/HAL/QCameraChannel.cpp             |  15 +-
+ QCamera2/HAL/QCameraChannel.h               |   3 +-
+ QCamera2/HAL/QCameraPostProc.cpp            | 198 ++-------------
+ QCamera2/HAL/QCameraPostProc.h              |   5 -
+ QCamera2/HAL/QCameraStateMachine.cpp        |   9 -
+ QCamera2/HAL/QCameraStateMachine.h          |   2 -
+ QCamera2/HAL/QCameraStream.cpp              | 358 ++--------------------------
+ QCamera2/HAL/QCameraStream.h                |  26 +-
+ QCamera2/stack/common/mm_camera_interface.h |  31 ---
+ 13 files changed, 74 insertions(+), 972 deletions(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 4fe0430..27c7b23 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -57,3 +57,4 @@ LOCAL_MODULE_TAGS := optional
+ include $(BUILD_SHARED_LIBRARY)
+ 
+ include $(LOCAL_PATH)/test/Android.mk
++
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index a93f8f2..785f322 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -961,12 +961,7 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+       m_max_pic_width(0),
+       m_max_pic_height(0),
+       mFlashNeeded(false),
+-      mCaptureRotation(0),
+-      mSnapshotJob(-1),
+-      mPostviewJob(-1),
+-      mMetadataJob(-1),
+-      mReprocJob(-1)
+-
++      mCaptureRotation(0)
+ {
+     mCameraDevice.common.tag = HARDWARE_DEVICE_TAG;
+     mCameraDevice.common.version = HARDWARE_DEVICE_API_VERSION(1, 0);
+@@ -992,10 +987,6 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+     }
+ #endif
+ 
+-    memset(mDeffOngoingJobs, 0, sizeof(mDeffOngoingJobs));
+-
+-    mDefferedWorkThread.launch(defferedWorkRoutine, this);
+-    mDefferedWorkThread.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC, FALSE, FALSE);
+ }
+ 
+ /*===========================================================================
+@@ -1009,9 +1000,6 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+  *==========================================================================*/
+ QCamera2HardwareInterface::~QCamera2HardwareInterface()
+ {
+-    mDefferedWorkThread.sendCmd(CAMERA_CMD_TYPE_STOP_DATA_PROC, TRUE, TRUE);
+-    mDefferedWorkThread.exit();
+-
+     closeCamera();
+     pthread_mutex_destroy(&m_lock);
+     pthread_cond_destroy(&m_cond);
+@@ -2134,6 +2122,10 @@ int QCamera2HardwareInterface::takePicture()
+             return UNKNOWN_ERROR;
+         }
+     } else {
++        // normal capture case
++        // need to stop preview channel
++        stopChannel(QCAMERA_CH_TYPE_PREVIEW);
++        delChannel(QCAMERA_CH_TYPE_PREVIEW);
+ 
+         if ( mParameters.isHDREnabled() ) {
+             // 'values' should be in "idx1,idx2,idx3,..." format
+@@ -2182,65 +2174,29 @@ int QCamera2HardwareInterface::takePicture()
+         if (mParameters.isJpegPictureFormat() ||
+             mParameters.isNV16PictureFormat() ||
+             mParameters.isNV21PictureFormat()) {
+-
+-            if (!isLongshotEnabled()) {
+-                rc = addCaptureChannel();
+-
+-                // normal capture case
+-                // need to stop preview channel
+-                stopChannel(QCAMERA_CH_TYPE_PREVIEW);
+-                delChannel(QCAMERA_CH_TYPE_PREVIEW);
+-
+-                waitDefferedWork(mSnapshotJob);
+-                waitDefferedWork(mMetadataJob);
+-
+-                {
+-                    DefferWorkArgs args;
+-                    DefferAllocBuffArgs allocArgs;
+-
+-                    memset(&args, 0, sizeof(DefferWorkArgs));
+-                    memset(&allocArgs, 0, sizeof(DefferAllocBuffArgs));
+-
+-                    allocArgs.ch = m_channels[QCAMERA_CH_TYPE_CAPTURE];
+-                    allocArgs.type = CAM_STREAM_TYPE_POSTVIEW;
+-                    args.allocArgs = allocArgs;
+-
+-                    mPostviewJob = queueDefferedWork(CMD_DEFF_ALLOCATE_BUFF,
+-                        args);
+-
+-                    if ( mPostviewJob == -1)
+-                        rc = UNKNOWN_ERROR;
+-                }
+-
+-                waitDefferedWork(mPostviewJob);
+-            } else {
+-                // normal capture case
+-                // need to stop preview channel
+-                stopChannel(QCAMERA_CH_TYPE_PREVIEW);
+-                delChannel(QCAMERA_CH_TYPE_PREVIEW);
+-
+-                rc = addCaptureChannel();
+-            }
+-
++            rc = addCaptureChannel();
+             if (rc == NO_ERROR) {
++                // start postprocessor
++                rc = m_postprocessor.start(m_channels[QCAMERA_CH_TYPE_CAPTURE]);
++                if (rc != NO_ERROR) {
++                    ALOGE("%s: cannot start postprocessor", __func__);
++                    delChannel(QCAMERA_CH_TYPE_CAPTURE);
++                    return rc;
++                }
+ 
+                 // start catpure channel
+                 rc = startChannel(QCAMERA_CH_TYPE_CAPTURE);
+                 if (rc != NO_ERROR) {
+                     ALOGE("%s: cannot start capture channel", __func__);
++                    m_postprocessor.stop();
+                     delChannel(QCAMERA_CH_TYPE_CAPTURE);
+                     return rc;
+                 }
+-                DefferWorkArgs args;
+-                memset(&args, 0, sizeof(DefferWorkArgs));
+-
+-                args.pprocArgs = m_channels[QCAMERA_CH_TYPE_CAPTURE];
+-                mReprocJob = queueDefferedWork(CMD_DEFF_PPROC_START,
+-                    args);
+ 
+                 if ( mLongshotEnabled ) {
+                     rc = longShot();
+                     if (NO_ERROR != rc) {
++                        m_postprocessor.stop();
+                         delChannel(QCAMERA_CH_TYPE_CAPTURE);
+                         return rc;
+                     }
+@@ -2314,28 +2270,6 @@ end:
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : stopCaptureChannel
+- *
+- * DESCRIPTION: Stops capture channel
+- *
+- * PARAMETERS : none
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int QCamera2HardwareInterface::stopCaptureChannel()
+-{
+-    if (mParameters.isJpegPictureFormat() ||
+-        mParameters.isNV16PictureFormat() ||
+-        mParameters.isNV21PictureFormat()) {
+-        stopChannel(QCAMERA_CH_TYPE_CAPTURE);
+-    }
+-
+-    return NO_ERROR;
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : cancelPicture
+  *
+  * DESCRIPTION: cancel picture impl
+@@ -3290,59 +3224,12 @@ int32_t QCamera2HardwareInterface::addStreamToChannel(QCameraChannel *pChannel,
+     if (isZSLMode() && streamType == CAM_STREAM_TYPE_SNAPSHOT) {
+         bDynAllocBuf = true;
+     }
+-
+-    if ( ( streamType == CAM_STREAM_TYPE_SNAPSHOT ||
+-           streamType == CAM_STREAM_TYPE_POSTVIEW ||
+-           streamType == CAM_STREAM_TYPE_METADATA) &&
+-         !isZSLMode() &&
+-         !isLongshotEnabled() &&
+-         !mParameters.getRecordingHintValue())
+-    {
+-        rc = pChannel->addStream(*this,
+-                                 pStreamInfo,
+-                                 minStreamBufNum,
+-                                 &gCamCapability[mCameraId]->padding_info,
+-                                 streamCB, userData,
+-                                 bDynAllocBuf,
+-                                 true);
+-
+-        // Queue buffer allocation for Snapshot and Metadata streams
+-        if ( !rc ) {
+-            DefferWorkArgs args;
+-            DefferAllocBuffArgs allocArgs;
+-
+-            memset(&args, 0, sizeof(DefferWorkArgs));
+-            memset(&allocArgs, 0, sizeof(DefferAllocBuffArgs));
+-            allocArgs.type = streamType;
+-            allocArgs.ch = pChannel;
+-            args.allocArgs = allocArgs;
+-
+-            if (streamType == CAM_STREAM_TYPE_SNAPSHOT) {
+-                mSnapshotJob = queueDefferedWork(CMD_DEFF_ALLOCATE_BUFF,
+-                   args);
+-
+-                if ( mSnapshotJob == -1) {
+-                    rc = UNKNOWN_ERROR;
+-                }
+-            } else if (streamType == CAM_STREAM_TYPE_METADATA) {
+-                mMetadataJob = queueDefferedWork(CMD_DEFF_ALLOCATE_BUFF,
+-                    args);
+-
+-                if ( mMetadataJob == -1) {
+-                    rc = UNKNOWN_ERROR;
+-                }
+-            }
+-        }
+-    } else {
+-        rc = pChannel->addStream(*this,
+-                                 pStreamInfo,
+-                                 minStreamBufNum,
+-                                 &gCamCapability[mCameraId]->padding_info,
+-                                 streamCB, userData,
+-                                 bDynAllocBuf,
+-                                 false);
+-    }
+-
++    rc = pChannel->addStream(*this,
++                             pStreamInfo,
++                             minStreamBufNum,
++                             &gCamCapability[mCameraId]->padding_info,
++                             streamCB, userData,
++                             bDynAllocBuf);
+     if (rc != NO_ERROR) {
+         ALOGE("%s: add stream type (%d) failed, ret = %d",
+               __func__, streamType, rc);
+@@ -4214,9 +4101,6 @@ int32_t QCamera2HardwareInterface::preparePreview()
+             return rc;
+         }
+ 
+-        if (!recordingHint) {
+-            waitDefferedWork(mMetadataJob);
+-        }
+     }
+ 
+     return rc;
+@@ -5288,189 +5172,4 @@ void QCamera2HardwareInterface::copyList(cam_dimension_t* src_list,
+    }
+ }
+ 
+-/*===========================================================================
+- * FUNCTION   : defferedWorkRoutine
+- *
+- * DESCRIPTION: data process routine that executes deffered tasks
+- *
+- * PARAMETERS :
+- *   @data    : user data ptr (QCamera2HardwareInterface)
+- *
+- * RETURN     : None
+- *==========================================================================*/
+-void *QCamera2HardwareInterface::defferedWorkRoutine(void *obj)
+-{
+-    int running = 1;
+-    int ret;
+-    uint8_t is_active = FALSE;
+-
+-    QCamera2HardwareInterface *pme = (QCamera2HardwareInterface *)obj;
+-    QCameraCmdThread *cmdThread = &pme->mDefferedWorkThread;
+-
+-    do {
+-        do {
+-            ret = cam_sem_wait(&cmdThread->cmd_sem);
+-            if (ret != 0 && errno != EINVAL) {
+-                ALOGE("%s: cam_sem_wait error (%s)",
+-                           __func__, strerror(errno));
+-                return NULL;
+-            }
+-        } while (ret != 0);
+-
+-        // we got notified about new cmd avail in cmd queue
+-        camera_cmd_type_t cmd = cmdThread->getCmd();
+-        switch (cmd) {
+-        case CAMERA_CMD_TYPE_START_DATA_PROC:
+-            ALOGD("%s: start data proc", __func__);
+-            is_active = TRUE;
+-            break;
+-        case CAMERA_CMD_TYPE_STOP_DATA_PROC:
+-            ALOGD("%s: stop data proc", __func__);
+-            is_active = FALSE;
+-            // signal cmd is completed
+-            cam_sem_post(&cmdThread->sync_sem);
+-            break;
+-        case CAMERA_CMD_TYPE_DO_NEXT_JOB:
+-            {
+-                DeffWork *dw =
+-                    reinterpret_cast<DeffWork *>(pme->mCmdQueue.dequeue());
+-
+-                if ( NULL == dw ) {
+-                    ALOGE("%s : Invalid deferred work", __func__);
+-                    break;
+-                }
+-
+-                switch( dw->cmd ) {
+-                case CMD_DEFF_ALLOCATE_BUFF:
+-                    {
+-                        QCameraChannel * pChannel = dw->args.allocArgs.ch;
+-
+-                        if ( NULL == pChannel ) {
+-                            ALOGE("%s : Invalid deferred work channel",
+-                                  __func__);
+-                            break;
+-                        }
+-
+-                        cam_stream_type_t streamType = dw->args.allocArgs.type;
+-
+-                        uint32_t iNumOfStreams = pChannel->getNumOfStreams();
+-                        QCameraStream *pStream = NULL;
+-                        for ( uint32_t i = 0; i < iNumOfStreams; ++i) {
+-                            pStream = pChannel->getStreamByIndex(i);
+-
+-                            if ( NULL == pStream ) {
+-                                break;
+-                            }
+-
+-                            if ( pStream->isTypeOf(streamType)) {
+-                                if ( pStream->allocateBuffers() ) {
+-                                    ALOGE("%s: Error allocating buffers !!!",
+-                                          __func__);
+-                                }
+-                                break;
+-                            }
+-                        }
+-                        {
+-                            Mutex::Autolock l(pme->mDeffLock);
+-                            pme->mDeffOngoingJobs[dw->id] = false;
+-                            delete dw;
+-                            pme->mDeffCond.signal();
+-                        }
+-
+-                    }
+-                    break;
+-                    case CMD_DEFF_PPROC_START:
+-                    {
+-                        QCameraChannel * pChannel = dw->args.pprocArgs;
+-                        assert(pChannel);
+-
+-                        if (pme->m_postprocessor.start(pChannel) != NO_ERROR) {
+-                            ALOGE("%s: cannot start postprocessor", __func__);
+-                            pme->delChannel(QCAMERA_CH_TYPE_CAPTURE);
+-                        }
+-                        {
+-                            Mutex::Autolock l(pme->mDeffLock);
+-                            pme->mDeffOngoingJobs[dw->id] = false;
+-                            delete dw;
+-                            pme->mDeffCond.signal();
+-                        }
+-                    }
+-                    break;
+-                default:
+-                    ALOGE("%s[%d]:  Incorrect command : %d",
+-                          __func__,
+-                          __LINE__,
+-                          dw->cmd);
+-                }
+-            }
+-            break;
+-        case CAMERA_CMD_TYPE_EXIT:
+-            running = 0;
+-            break;
+-        default:
+-            break;
+-        }
+-    } while (running);
+-
+-    return NULL;
+-}
+-
+-/*===========================================================================
+- * FUNCTION   : queueDefferedWork
+- *
+- * DESCRIPTION: function which queues deferred tasks
+- *
+- * PARAMETERS :
+- *   @cmd     : deferred task
+- *   @args    : deffered task arguments
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCamera2HardwareInterface::queueDefferedWork(DefferedWorkCmd cmd,
+-                                                     DefferWorkArgs args)
+-{
+-    Mutex::Autolock l(mDeffLock);
+-    for (int i = 0; i < MAX_ONGOING_JOBS; ++i) {
+-        if (!mDeffOngoingJobs[i]) {
+-            mCmdQueue.enqueue(new DeffWork(cmd, i, args));
+-            mDeffOngoingJobs[i] = true;
+-            mDefferedWorkThread.sendCmd(CAMERA_CMD_TYPE_DO_NEXT_JOB,
+-                                        FALSE,
+-                                        FALSE);
+-            return i;
+-        }
+-    }
+-    return -1;
+-}
+-
+-/*===========================================================================
+- * FUNCTION   : waitDefferedWork
+- *
+- * DESCRIPTION: waits for a deffered task to finish
+- *
+- * PARAMETERS :
+- *   @job_id  : deferred task id
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCamera2HardwareInterface::waitDefferedWork(int32_t &job_id)
+-{
+-    Mutex::Autolock l(mDeffLock);
+-
+-    if ((MAX_ONGOING_JOBS <= job_id) || (0 > job_id)) {
+-        return NO_ERROR;
+-    }
+-
+-    while ( mDeffOngoingJobs[job_id] == true ) {
+-        mDeffCond.wait(mDeffLock);
+-    }
+-
+-    job_id = MAX_ONGOING_JOBS;
+-    return NO_ERROR;
+-}
+-
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index c3b4703..44eb60f 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -33,8 +33,6 @@
+ #include <hardware/camera.h>
+ #include <hardware/power.h>
+ #include <utils/Log.h>
+-#include <utils/Mutex.h>
+-#include <utils/Condition.h>
+ #include <QCameraParameters.h>
+ 
+ #include "QCameraQueue.h"
+@@ -105,7 +103,6 @@ typedef struct {
+ 
+ #define QCAMERA_ION_USE_CACHE   true
+ #define QCAMERA_ION_USE_NOCACHE false
+-#define MAX_ONGOING_JOBS 25
+ 
+ typedef enum {
+     QCAMERA_NOTIFY_CALLBACK,
+@@ -275,7 +272,6 @@ private:
+     int autoFocus();
+     int cancelAutoFocus();
+     int takePicture();
+-    int stopCaptureChannel();
+     int cancelPicture();
+     int takeLiveSnapshot();
+     int cancelLiveSnapshot();
+@@ -509,54 +505,6 @@ private:
+     int32_t mFlash;
+     int32_t mRedEye;
+     int32_t mFlashPresence;
+-
+-    enum DefferedWorkCmd {
+-        CMD_DEFF_ALLOCATE_BUFF,
+-        CMD_DEFF_PPROC_START,
+-        CMD_DEFF_MAX
+-    };
+-
+-    typedef struct {
+-        QCameraChannel *ch;
+-        cam_stream_type_t type;
+-    } DefferAllocBuffArgs;
+-
+-    typedef union {
+-        DefferAllocBuffArgs allocArgs;
+-        QCameraChannel *pprocArgs;
+-    } DefferWorkArgs;
+-
+-    bool mDeffOngoingJobs[MAX_ONGOING_JOBS];
+-
+-    struct DeffWork
+-    {
+-        DeffWork(DefferedWorkCmd cmd,
+-                 uint32_t id,
+-                 DefferWorkArgs args)
+-            : cmd(cmd)
+-            , id(id)
+-            , args(args){};
+-
+-        DefferedWorkCmd cmd;
+-        uint32_t id;
+-        DefferWorkArgs args;
+-    };
+-
+-    QCameraCmdThread      mDefferedWorkThread;
+-    QCameraQueue          mCmdQueue;
+-
+-    Mutex                 mDeffLock;
+-    Condition             mDeffCond;
+-
+-    int32_t queueDefferedWork(DefferedWorkCmd cmd,
+-                              DefferWorkArgs args);
+-    int32_t waitDefferedWork(int32_t &job_id);
+-    static void *defferedWorkRoutine(void *obj);
+-
+-    int32_t mSnapshotJob;
+-    int32_t mPostviewJob;
+-    int32_t mMetadataJob;
+-    int32_t mReprocJob;
+ };
+ 
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index f58ac62..0211a92 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -253,9 +253,6 @@ void QCamera2HardwareInterface::capture_channel_cb_routine(mm_camera_super_buf_t
+         }
+     }
+ 
+-    // Wait on Postproc initialization if needed
+-    pme->waitDefferedWork(pme->mReprocJob);
+-
+     // send to postprocessor
+     pme->m_postprocessor.processData(frame);
+ 
+diff --git a/QCamera2/HAL/QCameraChannel.cpp b/QCamera2/HAL/QCameraChannel.cpp
+index 6972189..afb35e2 100644
+--- a/QCamera2/HAL/QCameraChannel.cpp
++++ b/QCamera2/HAL/QCameraChannel.cpp
+@@ -161,8 +161,7 @@ int32_t QCameraChannel::addStream(QCameraAllocator &allocator,
+                                   cam_padding_info_t *paddingInfo,
+                                   stream_cb_routine stream_cb,
+                                   void *userdata,
+-                                  bool bDynAllocBuf,
+-                                  bool bDeffAlloc)
++                                  bool bDynAllocBuf)
+ {
+     int32_t rc = NO_ERROR;
+     if (m_numStreams >= MAX_STREAM_NUM_IN_BUNDLE) {
+@@ -174,8 +173,7 @@ int32_t QCameraChannel::addStream(QCameraAllocator &allocator,
+                                                m_camHandle,
+                                                m_handle,
+                                                m_camOps,
+-                                               paddingInfo,
+-                                               bDeffAlloc);
++                                               paddingInfo);
+     if (pStream == NULL) {
+         ALOGE("%s: No mem for Stream", __func__);
+         return NO_MEMORY;
+@@ -207,11 +205,6 @@ int32_t QCameraChannel::start()
+ {
+     int32_t rc = NO_ERROR;
+ 
+-    for (int i = 0; i < m_numStreams; ++i) {
+-        if ( mStreams[i]->isDeffered() )
+-            mStreams[i]->configStream();
+-    }
+-
+     if (m_numStreams > 1) {
+         // there is more than one stream in the channel
+         // we need to notify mctl that all streams in this channel need to be bundled
+@@ -400,10 +393,6 @@ QCameraStream *QCameraChannel::getStreamByServerID(uint32_t serverID)
+  *==========================================================================*/
+ QCameraStream *QCameraChannel::getStreamByIndex(uint8_t index)
+ {
+-    if (index >= MAX_STREAM_NUM_IN_BUNDLE) {
+-        return NULL;
+-    }
+-
+     if (index < m_numStreams) {
+         return mStreams[index];
+     }
+diff --git a/QCamera2/HAL/QCameraChannel.h b/QCamera2/HAL/QCameraChannel.h
+index db24233..e6f60ef 100644
+--- a/QCamera2/HAL/QCameraChannel.h
++++ b/QCamera2/HAL/QCameraChannel.h
+@@ -56,8 +56,7 @@ public:
+                               cam_padding_info_t *paddingInfo,
+                               stream_cb_routine stream_cb,
+                               void *userdata,
+-                              bool bDynAllocBuf,
+-                              bool bDeffAlloc = false);
++                              bool bDynAllocBuf);
+     virtual int32_t start();
+     virtual int32_t stop();
+     virtual int32_t bufDone(mm_camera_super_buf_t *recvd_frame);
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 4de0a2b..e8b993e 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -78,7 +78,6 @@ QCameraPostProcessor::QCameraPostProcessor(QCamera2HardwareInterface *cam_ctrl)
+       mSaveFrmCnt(0),
+       mUseSaveProc(false),
+       mUseJpegBurst(false),
+-      mNewJpegSessionNeeded(true),
+       mJpegMemOpt(true)
+ {
+     memset(&mJpegHandle, 0, sizeof(mJpegHandle));
+@@ -226,69 +225,6 @@ int32_t QCameraPostProcessor::start(QCameraChannel *pSrcChannel)
+     m_dataProcTh.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC, FALSE, FALSE);
+     m_parent->m_cbNotifier.startSnapshots();
+     mRawBurstCount = m_parent->numOfSnapshotsExpected();
+-
+-    // Create Jpeg session
+-    if ( !m_parent->mParameters.getRecordingHintValue() &&
+-         !m_parent->isLongshotEnabled() &&
+-         !m_parent->isZSLMode()) {
+-
+-        QCameraChannel *pChannel = NULL;
+-        pChannel = m_parent->needReprocess() ? m_pReprocChannel : pSrcChannel;
+-        QCameraStream *pSnapshotStream = NULL;
+-        QCameraStream *pThumbStream = NULL;
+-
+-        for (int i = 0; i < pChannel->getNumOfStreams(); ++i) {
+-            QCameraStream *pStream = pChannel->getStreamByIndex(i);
+-
+-            if ( NULL == pStream ) {
+-                break;
+-            }
+-
+-            if (pStream->isTypeOf(CAM_STREAM_TYPE_SNAPSHOT) ||
+-                pStream->isOrignalTypeOf(CAM_STREAM_TYPE_SNAPSHOT)) {
+-                pSnapshotStream = pStream;
+-            }
+-
+-            if (pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
+-                pStream->isOrignalTypeOf(CAM_STREAM_TYPE_POSTVIEW)) {
+-                pThumbStream = pStream;
+-            }
+-        }
+-
+-        // If thumbnail is not part of the reprocess channel, then
+-        // try to get it from the source channel
+-        if ((NULL == pThumbStream) && (pChannel == m_pReprocChannel)) {
+-            for (int i = 0; i < pSrcChannel->getNumOfStreams(); ++i) {
+-                QCameraStream *pStream = pSrcChannel->getStreamByIndex(i);
+-
+-                if ( NULL == pStream ) {
+-                    break;
+-                }
+-
+-                if (pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
+-                    pStream->isOrignalTypeOf(CAM_STREAM_TYPE_POSTVIEW)) {
+-                    pThumbStream = pStream;
+-                }
+-            }
+-        }
+-
+-        if ( NULL != pSnapshotStream ) {
+-            mm_jpeg_encode_params_t encodeParam;
+-            memset(&encodeParam, 0, sizeof(mm_jpeg_encode_params_t));
+-            getJpegEncodingConfig(encodeParam, pSnapshotStream, pThumbStream);
+-            ALOGD("[KPI Perf] %s : call jpeg create_session", __func__);
+-
+-            rc = mJpegHandle.create_session(mJpegClientHandle,
+-                                            &encodeParam,
+-                                            &mJpegSessionId);
+-            if (rc != NO_ERROR) {
+-                ALOGE("%s: error creating a new jpeg encoding session", __func__);
+-                return rc;
+-            }
+-            mNewJpegSessionNeeded = false;
+-        }
+-    }
+-
+     return rc;
+ }
+ 
+@@ -637,21 +573,6 @@ int32_t QCameraPostProcessor::processData(mm_camera_super_buf_t *frame)
+         memset(jpeg_job, 0, sizeof(qcamera_jpeg_data_t));
+         jpeg_job->src_frame = frame;
+ 
+-        // find meta data frame
+-        mm_camera_buf_def_t *meta_frame = NULL;
+-        for (int i = 0; i < frame->num_bufs; i++) {
+-            // look through input superbuf
+-            if (frame->bufs[i]->stream_type == CAM_STREAM_TYPE_METADATA) {
+-                meta_frame = frame->bufs[i];
+-                break;
+-            }
+-        }
+-
+-        if (meta_frame != NULL) {
+-            // fill in meta data frame ptr
+-            jpeg_job->metadata = (cam_metadata_info_t *)meta_frame->buffer;
+-        }
+-
+         // enqueu to jpeg input queue
+         m_inputJpegQ.enqueue((void *)jpeg_job);
+     }
+@@ -853,31 +774,6 @@ int32_t QCameraPostProcessor::processPPData(mm_camera_super_buf_t *frame)
+     jpeg_job->src_frame = frame;
+     jpeg_job->src_reproc_frame = job->src_frame;
+ 
+-    // find meta data frame
+-    mm_camera_buf_def_t *meta_frame = NULL;
+-    for (int i = 0; i < job->src_frame->num_bufs; i++) {
+-        // look through input superbuf
+-        if (job->src_frame->bufs[i]->stream_type == CAM_STREAM_TYPE_METADATA) {
+-            meta_frame = job->src_frame->bufs[i];
+-            break;
+-        }
+-    }
+-
+-    if (meta_frame == NULL) {
+-        // look through reprocess superbuf
+-        for (int i = 0; i < frame->num_bufs; i++) {
+-            if (frame->bufs[i]->stream_type == CAM_STREAM_TYPE_METADATA) {
+-                meta_frame = frame->bufs[i];
+-                break;
+-            }
+-        }
+-    }
+-
+-    if (meta_frame != NULL) {
+-        // fill in meta data frame ptr
+-        jpeg_job->metadata = (cam_metadata_info_t *)meta_frame->buffer;
+-    }
+-
+     // free pp job buf
+     free(job);
+ 
+@@ -1086,9 +982,7 @@ void QCameraPostProcessor::releaseJpegJobData(qcamera_jpeg_data_t *job)
+     ALOGV("%s: E", __func__);
+     if (NULL != job) {
+         if (NULL != job->src_reproc_frame) {
+-            if (!job->reproc_frame_release) {
+-                releaseSuperBuf(job->src_reproc_frame);
+-            }
++            releaseSuperBuf(job->src_reproc_frame);
+             free(job->src_reproc_frame);
+             job->src_reproc_frame = NULL;
+         }
+@@ -1103,14 +997,6 @@ void QCameraPostProcessor::releaseJpegJobData(qcamera_jpeg_data_t *job)
+             delete job->pJpegExifObj;
+             job->pJpegExifObj = NULL;
+         }
+-
+-        if (NULL != job->src_reproc_bufs) {
+-            delete [] job->src_reproc_bufs;
+-        }
+-
+-        if (NULL != job->src_bufs) {
+-            delete [] job->src_bufs;
+-        }
+     }
+     ALOGV("%s: X", __func__);
+ }
+@@ -1508,9 +1394,27 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+             jpg_job.encode_job.thumb_dim.dst_dim.height);
+     }
+ 
+-    if (jpeg_job_data->metadata != NULL) {
++    // find meta data frame
++    mm_camera_buf_def_t *meta_frame = NULL;
++    for (int i = 0; i < jpeg_job_data->src_frame->num_bufs; i++) {
++        // look through input superbuf
++        if (jpeg_job_data->src_frame->bufs[i]->stream_type == CAM_STREAM_TYPE_METADATA) {
++            meta_frame = jpeg_job_data->src_frame->bufs[i];
++            break;
++        }
++    }
++    if (meta_frame == NULL && jpeg_job_data->src_reproc_frame != NULL) {
++        // look through reprocess source superbuf
++        for (int i = 0; i < jpeg_job_data->src_reproc_frame->num_bufs; i++) {
++            if (jpeg_job_data->src_reproc_frame->bufs[i]->stream_type == CAM_STREAM_TYPE_METADATA) {
++                meta_frame = jpeg_job_data->src_reproc_frame->bufs[i];
++                break;
++            }
++        }
++    }
++    if (meta_frame != NULL) {
+         // fill in meta data frame ptr
+-        jpg_job.encode_job.p_metadata = jpeg_job_data->metadata;
++        jpg_job.encode_job.p_metadata = (cam_metadata_info_t *)meta_frame->buffer;
+     }
+ 
+     m_parent->mExifParams.ui_flash_mode = (cam_flash_mode_t) m_parent->getFlash();
+@@ -1794,6 +1698,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+     int running = 1;
+     int ret;
+     uint8_t is_active = FALSE;
++    uint8_t needNewSess = TRUE;
+     QCameraPostProcessor *pme = (QCameraPostProcessor *)data;
+     QCameraCmdThread *cmdThread = &pme->m_dataProcTh;
+ 
+@@ -1814,6 +1719,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+         case CAMERA_CMD_TYPE_START_DATA_PROC:
+             ALOGV("%s: start data proc", __func__);
+             is_active = TRUE;
++            needNewSess = TRUE;
+             pme->m_saveProcTh.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC,
+                                       FALSE,
+                                       FALSE);
+@@ -1851,6 +1757,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+                     delete pme->m_pJpegExifObj;
+                     pme->m_pJpegExifObj = NULL;
+                 }
++                needNewSess = TRUE;
+ 
+                 // stop reproc channel if exists
+                 if (pme->m_pReprocChannel != NULL) {
+@@ -1873,8 +1780,6 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+ 
+                 // signal cmd is completed
+                 cam_sem_post(&cmdThread->sync_sem);
+-
+-                pme->mNewJpegSessionNeeded = true;
+             }
+             break;
+         case CAMERA_CMD_TYPE_DO_NEXT_JOB:
+@@ -1885,62 +1790,9 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+                         (qcamera_jpeg_data_t *)pme->m_inputJpegQ.dequeue();
+ 
+                     if (NULL != jpeg_job) {
+-
+-                      if (pme->m_parent->numOfSnapshotsExpected() == 1 &&
+-                          !pme->m_parent->isLongshotEnabled() &&
+-                          !pme->m_parent->mParameters.getRecordingHintValue() &&
+-                          !pme->m_parent->isZSLMode()) {
+-
+-                          if ((NULL != jpeg_job->src_reproc_frame) &&
+-                              (0 < jpeg_job->src_reproc_frame->num_bufs)) {
+-                              mm_camera_buf_def_t *bufs = NULL;
+-                              uint8_t num_bufs = -1;
+-                              num_bufs = jpeg_job->src_reproc_frame->num_bufs;
+-                              bufs = new mm_camera_buf_def_t[num_bufs];
+-                              if (NULL == bufs) {
+-                                  ALOGE("%s:Unable to allocate cached buffers",
+-                                        __func__);
+-                                  break;
+-                              }
+-
+-                              for (int i = 0; i < num_bufs; i++) {
+-                                  bufs[i] = *jpeg_job->src_reproc_frame->bufs[i];
+-                                  jpeg_job->src_reproc_frame->bufs[i] = &bufs[i];
+-                              }
+-                              jpeg_job->src_reproc_bufs = bufs;
+-                          }
+-
+-                          if ((NULL != jpeg_job->src_frame) &&
+-                              (0 < jpeg_job->src_frame->num_bufs)) {
+-                              mm_camera_buf_def_t *bufs = NULL;
+-                              uint8_t num_bufs = -1;
+-                              num_bufs = jpeg_job->src_frame->num_bufs;
+-                              bufs = new mm_camera_buf_def_t[num_bufs];
+-                              if (NULL == bufs) {
+-                                  ALOGE("%s:Unable to allocate cached buffers",
+-                                        __func__);
+-                                  break;
+-                              }
+-
+-                              for (int i = 0; i < num_bufs; i++) {
+-                                  bufs[i] = *jpeg_job->src_frame->bufs[i];
+-                                  jpeg_job->src_frame->bufs[i] = &bufs[i];
+-                              }
+-                              jpeg_job->src_bufs = bufs;
+-                          }
+-
+-                          pme->m_parent->processAPI(
+-                                          QCAMERA_SM_EVT_STOP_CAPTURE_CHANNEL,
+-                                          NULL);
+-                          // Don't release source frame after encoding
+-                          // at this point the source channel will not exist.
+-                          jpeg_job->reproc_frame_release = true;
+-                      }
+-
+                       // add into ongoing jpeg job Q
+                       pme->m_ongoingJpegQ.enqueue((void *)jpeg_job);
+-                      ret = pme->encodeData(jpeg_job,
+-                                            pme->mNewJpegSessionNeeded);
++                      ret = pme->encodeData(jpeg_job, needNewSess);
+                       if (NO_ERROR != ret) {
+                         // dequeue the last one
+                         pme->m_ongoingJpegQ.dequeue(false);
+diff --git a/QCamera2/HAL/QCameraPostProc.h b/QCamera2/HAL/QCameraPostProc.h
+index 05fd3c0..237e22c 100644
+--- a/QCamera2/HAL/QCameraPostProc.h
++++ b/QCamera2/HAL/QCameraPostProc.h
+@@ -47,10 +47,6 @@ typedef struct {
+     uint32_t client_hdl;             // handle of jpeg client (obtained when open jpeg)
+     mm_camera_super_buf_t *src_frame;// source frame (need to be returned back to kernel after done)
+     mm_camera_super_buf_t *src_reproc_frame; // original source frame for reproc if not NULL
+-    cam_metadata_info_t * metadata;  // source frame metadata
+-    bool reproc_frame_release;       // false release original buffer, true don't release it
+-    mm_camera_buf_def_t *src_reproc_bufs;
+-    mm_camera_buf_def_t *src_bufs;
+     QCameraExif *pJpegExifObj;
+ } qcamera_jpeg_data_t;
+ 
+@@ -183,7 +179,6 @@ private:
+     static const char *STORE_LOCATION;  // path for storing buffers
+     bool mUseSaveProc;                  // use store thread
+     bool mUseJpegBurst;                 // use jpeg burst encoding mode
+-    uint8_t mNewJpegSessionNeeded;
+     bool mJpegMemOpt;
+ };
+ 
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index ed68400..5db6dd0 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -1685,15 +1685,6 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+             rc = m_parent->processJpegNotify(jpeg_job);
+         }
+         break;
+-    case QCAMERA_SM_EVT_STOP_CAPTURE_CHANNEL:
+-        {
+-            rc = m_parent->stopCaptureChannel();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
+-        }
+-        break;
+     case QCAMERA_SM_EVT_SNAPSHOT_DONE:
+         {
+             rc = m_parent->cancelPicture();
+diff --git a/QCamera2/HAL/QCameraStateMachine.h b/QCamera2/HAL/QCameraStateMachine.h
+index 95254e8..63c59ff 100644
+--- a/QCamera2/HAL/QCameraStateMachine.h
++++ b/QCamera2/HAL/QCameraStateMachine.h
+@@ -85,8 +85,6 @@ typedef enum {
+     QCAMERA_SM_EVT_JPEG_EVT_NOTIFY,          // evt notify from jpeg
+     QCAMERA_SM_EVT_SNAPSHOT_DONE,            // internal evt that snapshot is done
+     QCAMERA_SM_EVT_THERMAL_NOTIFY,           // evt notify from thermal daemon
+-    QCAMERA_SM_EVT_STOP_CAPTURE_CHANNEL,     // stop capture channel
+-                                             // but don't delete the buffers
+     QCAMERA_SM_EVT_MAX
+ } qcamera_sm_evt_enum_t;
+ 
+diff --git a/QCamera2/HAL/QCameraStream.cpp b/QCamera2/HAL/QCameraStream.cpp
+index c07e4ad..8c7827b 100644
+--- a/QCamera2/HAL/QCameraStream.cpp
++++ b/QCamera2/HAL/QCameraStream.cpp
+@@ -72,44 +72,6 @@ int32_t QCameraStream::get_bufs(
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : get_bufs_deffered
+- *
+- * DESCRIPTION: static function entry to allocate deffered stream buffers
+- *
+- * PARAMETERS :
+- *   @offset     : offset info of stream buffers
+- *   @num_bufs   : number of buffers allocated
+- *   @initial_reg_flag: flag to indicate if buffer needs to be registered
+- *                      at kernel initially
+- *   @bufs       : output of allocated buffers
+- *   @ops_tbl    : ptr to buf mapping/unmapping ops
+- *   @user_data  : user data ptr of ops_tbl
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::get_bufs_deffered(
+-                     cam_frame_len_offset_t * /* offset */,
+-                     uint8_t *num_bufs,
+-                     uint8_t **initial_reg_flag,
+-                     mm_camera_buf_def_t **bufs,
+-                     mm_camera_map_unmap_ops_tbl_t * /* ops_tbl */,
+-                     void *user_data)
+-{
+-    QCameraStream *stream = reinterpret_cast<QCameraStream *>(user_data);
+-    if (!stream) {
+-        ALOGE("getBufs invalid stream pointer");
+-        return NO_MEMORY;
+-    }
+-
+-    *initial_reg_flag   = stream->mRegFlags;
+-    *num_bufs           = stream->mNumBufs;
+-    *bufs               = stream->mBufDefs;
+-    return NO_ERROR;
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : put_bufs
+  *
+  * DESCRIPTION: static function entry to deallocate stream buffers
+@@ -135,28 +97,6 @@ int32_t QCameraStream::put_bufs(
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : put_bufs_deffered
+- *
+- * DESCRIPTION: static function entry to deallocate deffered stream buffers
+- *
+- * PARAMETERS :
+- *   @ops_tbl    : ptr to buf mapping/unmapping ops
+- *   @user_data  : user data ptr of ops_tbl
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::put_bufs_deffered(
+-                     mm_camera_map_unmap_ops_tbl_t * /*ops_tbl */,
+-                     void * /*user_data*/ )
+-{
+-    // No op
+-    // Used for handling buffers with deffered allocation. They are freed separately.
+-    return NO_ERROR;
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : invalidate_buf
+  *
+  * DESCRIPTION: static function entry to invalidate a specific stream buffer
+@@ -220,8 +160,7 @@ QCameraStream::QCameraStream(QCameraAllocator &allocator,
+                              uint32_t camHandle,
+                              uint32_t chId,
+                              mm_camera_ops_t *camOps,
+-                             cam_padding_info_t *paddingInfo,
+-                             bool deffered) :
++                             cam_padding_info_t *paddingInfo) :
+         mDumpFrame(0),
+         mDumpMetaFrame(0),
+         mDumpSkipCnt(0),
+@@ -242,17 +181,11 @@ QCameraStream::QCameraStream(QCameraAllocator &allocator,
+         mStreamBufsAcquired(false),
+         m_bActive(false),
+         mDynBufAlloc(false),
+-        mBufAllocPid(0),
+-        mDefferedAllocation(deffered)
++        mBufAllocPid(0)
+ {
+     mMemVtbl.user_data = this;
+-    if ( !deffered ) {
+-        mMemVtbl.get_bufs = get_bufs;
+-        mMemVtbl.put_bufs = put_bufs;
+-    } else {
+-        mMemVtbl.get_bufs = get_bufs_deffered;
+-        mMemVtbl.put_bufs = put_bufs_deffered;
+-    }
++    mMemVtbl.get_bufs = get_bufs;
++    mMemVtbl.put_bufs = put_bufs;
+     mMemVtbl.invalidate_buf = invalidate_buf;
+     mMemVtbl.clean_invalidate_buf = clean_invalidate_buf;
+     memset(&mFrameLenOffset, 0, sizeof(mFrameLenOffset));
+@@ -277,9 +210,6 @@ QCameraStream::~QCameraStream()
+     pthread_mutex_destroy(&mCropLock);
+     pthread_mutex_destroy(&mParameterLock);
+ 
+-    if (mDefferedAllocation)
+-        releaseBuffs();
+-
+     if (mStreamInfoBuf != NULL) {
+         int rc = mCamOps->unmap_stream_buf(mCamHandle,
+                     mChannelHandle, mHandle, CAM_MAPPING_BUF_TYPE_STREAM_INFO, 0, -1);
+@@ -320,6 +250,7 @@ int32_t QCameraStream::init(QCameraHeapMemory *streamInfoBuf,
+                             bool bDynallocBuf)
+ {
+     int32_t rc = OK;
++    mm_camera_stream_config_t stream_config;
+ 
+     mHandle = mCamOps->add_stream(mCamHandle, mChannelHandle);
+     if (!mHandle) {
+@@ -341,19 +272,17 @@ int32_t QCameraStream::init(QCameraHeapMemory *streamInfoBuf,
+         goto err1;
+     }
+ 
+-    // Calculate buffer size for deffered allocation
+-    if (mDefferedAllocation) {
+-        rc = calcOffset(mStreamInfo);
+-        if (rc < 0) {
+-            ALOGE("%s : Failed to calculate stream offset", __func__);
+-            goto err1;
+-        }
+-    } else {
+-        rc = configStream();
+-        if (rc < 0) {
+-            ALOGE("%s : Failed to config stream ", __func__);
+-            goto err1;
+-        }
++    // Configure the stream
++    stream_config.stream_info = mStreamInfo;
++    stream_config.mem_vtbl = mMemVtbl;
++    stream_config.stream_cb = dataNotifyCB;
++    stream_config.padding_info = mPaddingInfo;
++    stream_config.userdata = this;
++    rc = mCamOps->config_stream(mCamHandle,
++                mChannelHandle, mHandle, &stream_config);
++    if (rc < 0) {
++        ALOGE("Failed to config stream, rc = %d", rc);
++        goto err2;
+     }
+ 
+     mDataCB = stream_cb;
+@@ -361,6 +290,9 @@ int32_t QCameraStream::init(QCameraHeapMemory *streamInfoBuf,
+     mDynBufAlloc = bDynallocBuf;
+     return 0;
+ 
++err2:
++    mCamOps->unmap_stream_buf(mCamHandle,
++                mChannelHandle, mHandle, CAM_MAPPING_BUF_TYPE_STREAM_INFO, 0, -1);
+ err1:
+     mCamOps->delete_stream(mCamHandle, mChannelHandle, mHandle);
+     mHandle = 0;
+@@ -372,79 +304,6 @@ done:
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : calcOffset
+- *
+- * DESCRIPTION: calculate frame offset based on format and padding information
+- *
+- * PARAMETERS :
+- *   @streamInfo  : stream information
+- *
+- * RETURN     : int32_t type of status
+- *              0  -- success
+- *              -1 -- failure
+- *==========================================================================*/
+-int32_t QCameraStream::calcOffset(cam_stream_info_t *streamInfo)
+-{
+-    int32_t rc = 0;
+-
+-    cam_dimension_t dim = streamInfo->dim;
+-    if (streamInfo->pp_config.feature_mask & CAM_QCOM_FEATURE_ROTATION &&
+-        streamInfo->stream_type != CAM_STREAM_TYPE_VIDEO) {
+-        if (streamInfo->pp_config.rotation == ROTATE_90 ||
+-            streamInfo->pp_config.rotation == ROTATE_270) {
+-            // rotated by 90 or 270, need to switch width and height
+-            dim.width = streamInfo->dim.height;
+-            dim.height = streamInfo->dim.width;
+-        }
+-    }
+-
+-    switch (streamInfo->stream_type) {
+-    case CAM_STREAM_TYPE_PREVIEW:
+-        rc = mm_stream_calc_offset_preview(streamInfo->fmt,
+-                                           &dim,
+-                                           &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_POSTVIEW:
+-        rc = mm_stream_calc_offset_post_view(streamInfo->fmt,
+-                                           &dim,
+-                                           &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_SNAPSHOT:
+-        rc = mm_stream_calc_offset_snapshot(streamInfo->fmt,
+-                                            &dim,
+-                                            &mPaddingInfo,
+-                                            &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_OFFLINE_PROC:
+-        rc = mm_stream_calc_offset_postproc(streamInfo,
+-                                            &mPaddingInfo,
+-                                            &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_VIDEO:
+-        rc = mm_stream_calc_offset_video(&dim,
+-                                         &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_RAW:
+-        rc = mm_stream_calc_offset_raw(streamInfo->fmt,
+-                                       &dim,
+-                                       &mPaddingInfo,
+-                                       &streamInfo->buf_planes);
+-        break;
+-    case CAM_STREAM_TYPE_METADATA:
+-        rc = mm_stream_calc_offset_metadata(&dim,
+-                                            &mPaddingInfo,
+-                                            &streamInfo->buf_planes);
+-        break;
+-    default:
+-        ALOGE("%s: not supported for stream type %d",
+-                   __func__, streamInfo->stream_type);
+-        rc = -1;
+-        break;
+-    }
+-    return rc;
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : start
+  *
+  * DESCRIPTION: start stream. Will start main stream thread to handle stream
+@@ -721,10 +580,10 @@ int32_t QCameraStream::bufDone(const void *opaque, bool isMetaData)
+  *              none-zero failure code
+  *==========================================================================*/
+ int32_t QCameraStream::getBufs(cam_frame_len_offset_t *offset,
+-                               uint8_t *num_bufs,
+-                               uint8_t **initial_reg_flag,
+-                               mm_camera_buf_def_t **bufs,
+-                               mm_camera_map_unmap_ops_tbl_t *ops_tbl)
++                     uint8_t *num_bufs,
++                     uint8_t **initial_reg_flag,
++                     mm_camera_buf_def_t **bufs,
++                     mm_camera_map_unmap_ops_tbl_t *ops_tbl)
+ {
+     int rc = NO_ERROR;
+     uint8_t *regFlags;
+@@ -844,139 +703,6 @@ int32_t QCameraStream::getBufs(cam_frame_len_offset_t *offset,
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : allocateBuffers
+- *
+- * DESCRIPTION: allocate stream buffers
+- *
+- * PARAMETERS :
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::allocateBuffers()
+-{
+-    int rc = NO_ERROR;
+-
+-    mFrameLenOffset = mStreamInfo->buf_planes.plane_info;
+-
+-    //Allocate and map stream info buffer
+-    mStreamBufs = mAllocator.allocateStreamBuf(mStreamInfo->stream_type,
+-                                               mFrameLenOffset.frame_len,
+-                                               mFrameLenOffset.mp[0].stride,
+-                                               mFrameLenOffset.mp[0].scanline,
+-                                               mNumBufs);
+-
+-    if (!mStreamBufs) {
+-        ALOGE("%s: Failed to allocate stream buffers", __func__);
+-        return NO_MEMORY;
+-    }
+-
+-    for (int i = 0; i < mNumBufs; i++) {
+-        rc = mapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF,
+-                    i, -1,
+-                    mStreamBufs->getFd(i),
+-                    mStreamBufs->getSize(i));
+-        if (rc < 0) {
+-            ALOGE("%s: map_stream_buf failed: %d", __func__, rc);
+-            for (int j = 0; j < i; j++) {
+-                unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-            }
+-            mStreamBufs->deallocate();
+-            delete mStreamBufs;
+-            mStreamBufs = NULL;
+-            return INVALID_OPERATION;
+-        }
+-    }
+-
+-    //regFlags array is allocated by us,
+-    // but consumed and freed by mm-camera-interface
+-    mRegFlags = (uint8_t *)malloc(sizeof(uint8_t) * mNumBufs);
+-    if (!mRegFlags) {
+-        ALOGE("%s: Out of memory", __func__);
+-        for (int i = 0; i < mNumBufs; i++) {
+-            unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-        }
+-        mStreamBufs->deallocate();
+-        delete mStreamBufs;
+-        mStreamBufs = NULL;
+-        return NO_MEMORY;
+-    }
+-    memset(mRegFlags, 0, sizeof(uint8_t) * mNumBufs);
+-
+-    size_t bufDefsSize = mNumBufs * sizeof(mm_camera_buf_def_t);
+-    mBufDefs = (mm_camera_buf_def_t *)malloc(bufDefsSize);
+-    if (mBufDefs == NULL) {
+-        ALOGE("%s: getRegFlags failed %d", __func__, rc);
+-        for (int i = 0; i < mNumBufs; i++) {
+-            unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-        }
+-        mStreamBufs->deallocate();
+-        delete mStreamBufs;
+-        mStreamBufs = NULL;
+-        free(mRegFlags);
+-        mRegFlags = NULL;
+-        return INVALID_OPERATION;
+-    }
+-    memset(mBufDefs, 0, bufDefsSize);
+-    for (int i = 0; i < mNumBufs; i++) {
+-        mStreamBufs->getBufDef(mFrameLenOffset, mBufDefs[i], i);
+-    }
+-
+-    rc = mStreamBufs->getRegFlags(mRegFlags);
+-    if (rc < 0) {
+-        ALOGE("%s: getRegFlags failed %d", __func__, rc);
+-        for (int i = 0; i < mNumBufs; i++) {
+-            unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-        }
+-        mStreamBufs->deallocate();
+-        delete mStreamBufs;
+-        mStreamBufs = NULL;
+-        free(mBufDefs);
+-        mBufDefs = NULL;
+-        free(mRegFlags);
+-        mRegFlags = NULL;
+-        return INVALID_OPERATION;
+-    }
+-
+-    return NO_ERROR;
+-}
+-
+-
+-/*===========================================================================
+- * FUNCTION   : releaseBuffs
+- *
+- * DESCRIPTION: method to deallocate stream buffers
+- *
+- * PARAMETERS :
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::releaseBuffs()
+-{
+-    int rc = NO_ERROR;
+-
+-    for (int i = 0; i < mNumBufs; i++) {
+-        rc = unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-        if (rc < 0) {
+-            ALOGE("%s: map_stream_buf failed: %d", __func__, rc);
+-        }
+-    }
+-    mBufDefs = NULL; // mBufDefs just keep a ptr to the buffer
+-                     // mm-camera-interface own the buffer, so no need to free
+-    memset(&mFrameLenOffset, 0, sizeof(mFrameLenOffset));
+-    if ( !mStreamBufsAcquired ) {
+-        mStreamBufs->deallocate();
+-        delete mStreamBufs;
+-    }
+-
+-    return rc;
+-}
+-
+-
+-/*===========================================================================
+  * FUNCTION   : BufAllocRoutine
+  *
+  * DESCRIPTION: function to allocate additional stream buffers
+@@ -1423,42 +1149,4 @@ void QCameraStream::releaseFrameData(void *data, void *user_data)
+     }
+ }
+ 
+-/*===========================================================================
+- * FUNCTION   : configStream
+- *
+- * DESCRIPTION: send stream configuration to back end
+- *
+- * PARAMETERS :
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::configStream()
+-{
+-    int rc = NO_ERROR;
+-
+-    // Configure the stream
+-    mm_camera_stream_config_t stream_config;
+-    stream_config.stream_info = mStreamInfo;
+-    stream_config.mem_vtbl = mMemVtbl;
+-    stream_config.stream_cb = dataNotifyCB;
+-    stream_config.padding_info = mPaddingInfo;
+-    stream_config.userdata = this;
+-    rc = mCamOps->config_stream(mCamHandle,
+-                mChannelHandle, mHandle, &stream_config);
+-    if (rc < 0) {
+-        ALOGE("Failed to config stream, rc = %d", rc);
+-        mCamOps->unmap_stream_buf(mCamHandle,
+-                                  mChannelHandle,
+-                                  mHandle,
+-                                  CAM_MAPPING_BUF_TYPE_STREAM_INFO,
+-                                  0,
+-                                  -1);
+-        return UNKNOWN_ERROR;
+-    }
+-
+-    return rc;
+-}
+-
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCameraStream.h b/QCamera2/HAL/QCameraStream.h
+index c558891..c878e7f 100644
+--- a/QCamera2/HAL/QCameraStream.h
++++ b/QCamera2/HAL/QCameraStream.h
+@@ -53,8 +53,7 @@ public:
+                   uint32_t camHandle,
+                   uint32_t chId,
+                   mm_camera_ops_t *camOps,
+-                  cam_padding_info_t *paddingInfo,
+-                  bool deffered = false);
++                  cam_padding_info_t *paddingInfo);
+     virtual ~QCameraStream();
+     virtual int32_t init(QCameraHeapMemory *streamInfoBuf,
+                          uint8_t minStreamBufNum,
+@@ -69,10 +68,6 @@ public:
+     virtual int32_t start();
+     virtual int32_t stop();
+ 
+-    /* Used for deffered allocation of buffers */
+-    virtual int32_t allocateBuffers();
+-    virtual int32_t releaseBuffs();
+-
+     static void dataNotifyCB(mm_camera_super_buf_t *recvd_frame, void *userdata);
+     static void *dataProcRoutine(void *data);
+     static void *BufAllocRoutine(void *data);
+@@ -96,8 +91,6 @@ public:
+     int32_t getParameter(cam_stream_parm_buffer_t &param);
+ 
+     static void releaseFrameData(void *data, void *user_data);
+-    int32_t configStream();
+-    bool isDeffered() const { return mDefferedAllocation; }
+ 
+     int mDumpFrame;
+     int mDumpMetaFrame;
+@@ -112,7 +105,6 @@ private:
+     mm_camera_stream_mem_vtbl_t mMemVtbl;
+     uint8_t mNumBufs;
+     uint8_t mNumBufsNeedAlloc;
+-    uint8_t *mRegFlags;
+     stream_cb_routine mDataCB;
+     void *mUserData;
+ 
+@@ -141,23 +133,9 @@ private:
+                      mm_camera_buf_def_t **bufs,
+                      mm_camera_map_unmap_ops_tbl_t *ops_tbl,
+                      void *user_data);
+-
+-    static int32_t get_bufs_deffered(
+-                 cam_frame_len_offset_t *offset,
+-                 uint8_t *num_bufs,
+-                 uint8_t **initial_reg_flag,
+-                 mm_camera_buf_def_t **bufs,
+-                 mm_camera_map_unmap_ops_tbl_t *ops_tbl,
+-                 void *user_data);
+-
+     static int32_t put_bufs(
+                      mm_camera_map_unmap_ops_tbl_t *ops_tbl,
+                      void *user_data);
+-
+-    static int32_t put_bufs_deffered(
+-                     mm_camera_map_unmap_ops_tbl_t *ops_tbl,
+-                     void *user_data);
+-
+     static int32_t invalidate_buf(int index, void *user_data);
+     static int32_t clean_invalidate_buf(int index, void *user_data);
+ 
+@@ -169,8 +147,6 @@ private:
+     int32_t putBufs(mm_camera_map_unmap_ops_tbl_t *ops_tbl);
+     int32_t invalidateBuf(int index);
+     int32_t cleanInvalidateBuf(int index);
+-    int32_t calcOffset(cam_stream_info_t *streamInfo);
+-    bool mDefferedAllocation;
+ 
+ };
+ 
+diff --git a/QCamera2/stack/common/mm_camera_interface.h b/QCamera2/stack/common/mm_camera_interface.h
+index 233b010..7ca99f9 100644
+--- a/QCamera2/stack/common/mm_camera_interface.h
++++ b/QCamera2/stack/common/mm_camera_interface.h
+@@ -623,35 +623,4 @@ uint8_t get_num_of_cameras();
+ /* return reference pointer of camera vtbl */
+ mm_camera_vtbl_t * camera_open(uint8_t camera_idx);
+ struct camera_info *get_cam_info(int camera_id);
+-
+-/* helper functions */
+-int32_t mm_stream_calc_offset_preview(cam_format_t fmt,
+-                                      cam_dimension_t *dim,
+-                                      cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_post_view(cam_format_t fmt,
+-                                      cam_dimension_t *dim,
+-                                      cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_snapshot(cam_format_t fmt,
+-                                       cam_dimension_t *dim,
+-                                       cam_padding_info_t *padding,
+-                                       cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_raw(cam_format_t fmt,
+-                                  cam_dimension_t *dim,
+-                                  cam_padding_info_t *padding,
+-                                  cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_video(cam_dimension_t *dim,
+-                                    cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_metadata(cam_dimension_t *dim,
+-                                       cam_padding_info_t *padding,
+-                                       cam_stream_buf_plane_info_t *buf_planes);
+-
+-int32_t mm_stream_calc_offset_postproc(cam_stream_info_t *stream_info,
+-                                       cam_padding_info_t *padding,
+-                                       cam_stream_buf_plane_info_t *buf_planes);
+-
+ #endif /*__MM_CAMERA_INTERFACE_H__*/
+-- 
+1.8.3.1
+

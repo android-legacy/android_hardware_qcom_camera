@@ -1,0 +1,36 @@
+From 7bfb7fce6381d75c6a6cf39852d27a56f9d1e8f8 Mon Sep 17 00:00:00 2001
+From: Krupal Divvela <kdivvela@codeaurora.org>
+Date: Tue, 19 Mar 2013 23:31:32 +0530
+Subject: [PATCH 162/176] Camera: fix for the jpeg snapshot CB issue.
+
+check for the preview state before executing the snapshot jpeg cb.
+
+Change-Id: I6b0a3b9194e85891af79288f6f0364ad455b26d9
+---
+ QCamera/HAL/core/src/QCameraHWI.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI.cpp b/QCamera/HAL/core/src/QCameraHWI.cpp
+index 8facf2d..b70657b 100755
+--- a/QCamera/HAL/core/src/QCameraHWI.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI.cpp
+@@ -120,11 +120,16 @@ void QCameraHardwareInterface::snapshot_jpeg_cb(jpeg_job_status_t status,
+        ALOGE("%s: userdata is null", __func__);
+        return;
+     }
++
+     QCameraHardwareInterface *pme = (QCameraHardwareInterface *)cookie->userdata;
+     if(pme == NULL){
+        ALOGE("%s: pme is null", __func__);
+        return;
+     }
++    if(pme->mPreviewState == QCAMERA_HAL_PREVIEW_STOPPED){
++        ALOGE("Stop issued. Return from snapshot_jpeg_cb");
++        return;
++    }
+ 
+     /* no use of src frames, return them to kernel */
+     for(int i = 0; i< cookie->src_frame->num_bufs; i++) {
+-- 
+1.8.3.1
+

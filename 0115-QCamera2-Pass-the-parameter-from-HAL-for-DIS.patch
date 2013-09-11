@@ -1,0 +1,125 @@
+From 734552f58ad481cc2e4336a332167135b79785dd Mon Sep 17 00:00:00 2001
+From: chiz <chiz@codeaurora.org>
+Date: Tue, 18 Mar 2014 10:17:44 +0800
+Subject: [PATCH 115/176] QCamera2: Pass the parameter from HAL for DIS
+
+Pass the parameter for DIS before linking stream, so
+the MCT will know when enable/disable DIS before stream
+on and can adjust the resolution in port cap reserve
+
+Change-Id: Id6b91a64364ec559c5fa62d540f1b417b7a19842
+---
+ QCamera2/HAL/QCamera2HWI.cpp       |  2 +-
+ QCamera2/HAL/QCameraParameters.cpp | 22 ++++++++++++++++++++++
+ QCamera2/HAL/QCameraParameters.h   |  2 ++
+ QCamera2/stack/common/cam_intf.h   |  2 ++
+ 4 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ec36e55..31f0bd1 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1644,7 +1644,6 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+ {
+     int rc = NO_ERROR;
+     const char *effect;
+-
+     QCameraHeapMemory *streamInfoBuf = new QCameraHeapMemory(QCAMERA_ION_USE_CACHE);
+     if (!streamInfoBuf) {
+         ALOGE("allocateStreamInfoBuf: Unable to allocate streamInfo object");
+@@ -1691,6 +1690,7 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+         break;
+     case CAM_STREAM_TYPE_VIDEO:
+         streamInfo->useAVTimer = mParameters.isAVTimerEnabled();
++        streamInfo->dis_enable = mParameters.isDISEnabled();
+     case CAM_STREAM_TYPE_PREVIEW:
+         if (mParameters.getRecordingHintValue()) {
+             char value[PROPERTY_VALUE_MAX];
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 552cb5a..9c1c498 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -577,6 +577,7 @@ QCameraParameters::QCameraParameters()
+       m_bFixedFrameRateSet(false),
+       m_bHDREnabled(false),
+       m_bAVTimerEnabled(false),
++      m_bDISEnabled(false),
+       m_AdjustFPS(NULL),
+       m_bHDR1xFrameEnabled(true),
+       m_HDRSceneEnabled(false),
+@@ -4919,6 +4920,11 @@ int32_t QCameraParameters::setDISValue(const char *disStr)
+         if (value != NAME_NOT_FOUND) {
+             ALOGV("%s: Setting DIS value %s", __func__, disStr);
+             updateParamEntry(KEY_QC_DIS, disStr);
++            if (!(strcmp(disStr,"enable"))) {
++                m_bDISEnabled = true;
++            } else {
++                m_bDISEnabled = false;
++            }
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_DIS_ENABLE,
+                                           sizeof(value),
+@@ -4926,6 +4932,7 @@ int32_t QCameraParameters::setDISValue(const char *disStr)
+         }
+     }
+     ALOGE("Invalid DIS value: %s", (disStr == NULL) ? "NULL" : disStr);
++    m_bDISEnabled = false;
+     return BAD_VALUE;
+ }
+ 
+@@ -7745,4 +7752,19 @@ bool QCameraParameters::isAVTimerEnabled()
+     return m_bAVTimerEnabled;
+ }
+ 
++/*===========================================================================
++ * FUNCTION   : isDISEnabled
++ *
++ * DESCRIPTION: if DIS is enabled
++ *
++ * PARAMETERS : none
++ *
++ * RETURN     : true: needed
++ *              false: no need
++ *==========================================================================*/
++ bool QCameraParameters::isDISEnabled()
++{
++    return m_bDISEnabled;
++}
++
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index c7e94e8..5e8aee4 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -501,6 +501,7 @@ public:
+     int32_t restoreAEBracket();
+     int32_t updateRAW(cam_dimension_t max_dim);
+     bool isAVTimerEnabled();
++    bool isDISEnabled();
+ 
+     cam_focus_mode_type getFocusMode() const {return mFocusMode;};
+     int32_t setNumOfSnapshot();
+@@ -721,6 +722,7 @@ private:
+     cam_dimension_t m_rawSize; // live snapshot size
+     bool m_bHDREnabled;             // if HDR is enabled
+     bool m_bAVTimerEnabled;    //if AVTimer is enabled
++    bool m_bDISEnabled;
+     QCameraAdjustFPS *m_AdjustFPS;
+     bool m_bHDR1xFrameEnabled;          // if frame with exposure compensation 0 during HDR is enabled
+     bool m_HDRSceneEnabled; // Auto HDR indication
+diff --git a/QCamera2/stack/common/cam_intf.h b/QCamera2/stack/common/cam_intf.h
+index 49ead1c..ef79f26 100644
+--- a/QCamera2/stack/common/cam_intf.h
++++ b/QCamera2/stack/common/cam_intf.h
+@@ -357,6 +357,8 @@ typedef struct {
+ 
+     uint8_t useAVTimer; /*flag to indicate use of AVTimer for TimeStamps*/
+ 
++    uint8_t dis_enable;
++
+     /* Image Stabilization type */
+     cam_is_type_t is_type;
+ 
+-- 
+1.8.3.1
+

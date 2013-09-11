@@ -1,0 +1,73 @@
+From 6935f198a6540d65ebf1e0502e3ab70541a0b951 Mon Sep 17 00:00:00 2001
+From: Yu Yang <yuyang@codeaurora.org>
+Date: Wed, 11 Sep 2013 18:37:21 +0800
+Subject: [PATCH 037/176] QCamera2: Fix thumbnail rotation issue for jpeg sw
+ encoding
+
+In 8974/8x26, rotation is done in cpp.
+So the input dim of thumbnail will be swapped when it is rotated, and
+we need to swap the o/p dim.
+
+While in 8x10/8x12, we use jpg sw encoder to handle rotation itself.
+Input dim of thumbnail is not swaped,
+so we needn't swap o/p dim  manually.
+
+Crs-fixed: 538646
+Change-Id: I4ac1dacdea336812daa829db14b81a8b2c72ecc8
+---
+ QCamera2/HAL/QCameraPostProc.cpp | 23 +++++++++++++++--------
+ 1 file changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 64d207c..f2c620b 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -1238,6 +1238,12 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+           m_pJpegExifObj->getNumOfEntries();
+     }
+ 
++    // set rotation only when no online rotation or offline pp rotation is done before
++    if (!m_parent->needRotationReprocess()) {
++        jpg_job.encode_job.rotation = m_parent->getJpegRotation();
++    }
++    ALOGD("%s: jpeg rotation is set to %d", __func__, jpg_job.encode_job.rotation);
++
+     // thumbnail dim
+     if (m_bThumbnailNeeded == TRUE) {
+         if (thumb_stream == NULL) {
+@@ -1253,8 +1259,10 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+         jpg_job.encode_job.thumb_dim.src_dim = src_dim;
+         m_parent->getThumbnailSize(jpg_job.encode_job.thumb_dim.dst_dim);
+         int rotation = m_parent->getJpegRotation();
+-        if (rotation == 90 || rotation ==270) {
+-            // swap dimension if rotation is 90 or 270
++        if ((rotation == 90 || rotation == 270)
++            && jpg_job.encode_job.rotation == 0) {
++            // swap dimension if rotation is 90 or 270,
++            // and the rotation is already done in cpp.
+             int32_t temp = jpg_job.encode_job.thumb_dim.dst_dim.height;
+             jpg_job.encode_job.thumb_dim.dst_dim.height =
+                 jpg_job.encode_job.thumb_dim.dst_dim.width;
+@@ -1262,14 +1270,13 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+         }
+         jpg_job.encode_job.thumb_dim.crop = crop;
+         jpg_job.encode_job.thumb_index = thumb_frame->buf_idx;
++        ALOGD("%s, thumbnail src w/h (%dx%d), dst w/h (%dx%d)", __func__,
++            jpg_job.encode_job.thumb_dim.src_dim.width,
++            jpg_job.encode_job.thumb_dim.src_dim.height,
++            jpg_job.encode_job.thumb_dim.dst_dim.width,
++            jpg_job.encode_job.thumb_dim.dst_dim.height);
+     }
+ 
+-    // set rotation only when no online rotation or offline pp rotation is done before
+-    if (!m_parent->needRotationReprocess()) {
+-        jpg_job.encode_job.rotation = m_parent->getJpegRotation();
+-    }
+-    ALOGV("%s: jpeg rotation is set to %d", __func__, jpg_job.encode_job.rotation);
+-
+     // find meta data frame
+     mm_camera_buf_def_t *meta_frame = NULL;
+     for (int i = 0; i < jpeg_job_data->src_frame->num_bufs; i++) {
+-- 
+1.8.3.1
+

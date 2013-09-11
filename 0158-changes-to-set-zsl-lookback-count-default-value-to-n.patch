@@ -1,0 +1,31 @@
+From 9b4f7bf6840f1dd4b7a8cb6c1934d004a7b79640 Mon Sep 17 00:00:00 2001
+From: Guruprasad Gaonkar <ggaonk@codeaurora.org>
+Date: Wed, 20 Feb 2013 16:05:31 -0800
+Subject: [PATCH 158/176] changes to set zsl lookback count default value to
+ non zero.
+
+ZSL look back value is changed to 1 to avoid lag during zsl
+snapshot. Non zero value will avoid zsl queue flush and waiting for
+new frame time delay.
+
+Change-Id: I9e90d8b564c9e9c5c3ac25f783d96f235908f0fd
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index fccf9a5..498397b 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -3865,7 +3865,7 @@ int QCameraHardwareInterface::getZSLBackLookCount(void) const
+     int look_back;
+     char prop[PROPERTY_VALUE_MAX];
+     memset(prop, 0, sizeof(prop));
+-    property_get("persist.camera.zsl.backlookcnt", prop, "0");
++    property_get("persist.camera.zsl.backlookcnt", prop, "1");
+     ALOGI("%s: prop = %d", __func__, atoi(prop));
+     look_back = atoi(prop);
+     if (look_back == 0 ) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,28 @@
+From 6e1b75ed0ee700b697532d4aedb79bc308541284 Mon Sep 17 00:00:00 2001
+From: Mridul Singh <mridul@codeaurora.org>
+Date: Wed, 4 Sep 2013 13:57:22 -0700
+Subject: [PATCH 001/176] QCamera2: Fix for mm_camera_poll_fn fatal error.
+
+          Adding an additional check for poll_cb to be not equal to NULL.
+
+Change-Id: I267f1ee6a0d442944c312f60d303f62639759a7f
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+index 3e691ca..3e9f466 100755
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+@@ -263,7 +263,7 @@ static void *mm_camera_poll_fn(mm_camera_poll_thread_t *poll_cb)
+             usleep(10);
+             continue;
+         }
+-    } while (poll_cb->state == MM_CAMERA_POLL_TASK_STATE_POLL);
++    } while ((poll_cb != NULL) && (poll_cb->state == MM_CAMERA_POLL_TASK_STATE_POLL));
+     return NULL;
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,28 @@
+From a1eb31c20ff3cdf36b64a6c20e89ec5290dc3139 Mon Sep 17 00:00:00 2001
+From: Chandan Gera <cgera@codeaurora.org>
+Date: Wed, 16 Apr 2014 16:49:37 +0530
+Subject: [PATCH 129/176] Camera: Fix Dump Frame logic in HAL.
+
+Fixing Dump frame logic to dump only requested number of frames.
+
+Change-Id: I33487c79895b451eb4fb69b384b53b54b462a842
+---
+ QCamera2/HAL/QCamera2HWICallbacks.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 35c7ae1..cce999b 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -1344,7 +1344,7 @@ void QCamera2HardwareInterface::dumpFrameToFile(QCameraStream *stream,
+                     // reset frame count if cycling
+                     mDumpFrmCnt = 0;
+                 }
+-                if (mDumpFrmCnt >= 0 && mDumpFrmCnt <= frm_num) {
++                if (mDumpFrmCnt >= 0 && mDumpFrmCnt < frm_num) {
+                     char buf[32];
+                     char timeBuf[128];
+                     time_t current_time;
+-- 
+1.8.3.1
+

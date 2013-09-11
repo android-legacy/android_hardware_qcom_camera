@@ -1,0 +1,48 @@
+From e4f5c12c788075e17dbadfe5e2d785f1d4123ae8 Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Tue, 31 Dec 2013 14:49:44 +0530
+Subject: [PATCH 084/176] Camera: Align preview/video buffer stride to 32
+ bytes.
+
+Aligning preview/video buffer strides to 32 bytes so that
+c2d doesn't memcopy buffers. This will reduce CPU numbers for
+480p recording use case and other sizes which doesn't have
+stride 32 byte aligned.
+
+Change-Id: I2d97e221618cb6868a24530064d3b45215c5f318
+CRs-Fixed: 587608
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 819827c..488bf86 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -1677,7 +1677,7 @@ int32_t mm_stream_calc_offset_preview(cam_format_t fmt,
+         /* 2 planes: Y + CbCr */
+         buf_planes->plane_info.num_planes = 2;
+ 
+-        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_16);
++        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_32);
+         scanline = PAD_TO_SIZE(dim->height, CAM_PAD_TO_2);
+ 
+         buf_planes->plane_info.mp[0].offset = 0;
+@@ -1689,7 +1689,7 @@ int32_t mm_stream_calc_offset_preview(cam_format_t fmt,
+         buf_planes->plane_info.mp[0].width = dim->width;
+         buf_planes->plane_info.mp[0].height = dim->height;
+ 
+-        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_16);
++        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_32);
+         scanline = PAD_TO_SIZE(dim->height / 2, CAM_PAD_TO_2);
+         buf_planes->plane_info.mp[1].offset = 0;
+         buf_planes->plane_info.mp[1].len =
+-- 
+1.8.3.1
+

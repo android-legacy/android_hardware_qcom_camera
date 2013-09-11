@@ -1,0 +1,36 @@
+From 11ef34c58c36635383714872e75a65c642dcda41 Mon Sep 17 00:00:00 2001
+From: Rajaram Gudivada <rajaramg@codeaurora.org>
+Date: Thu, 3 Apr 2014 02:24:29 +0530
+Subject: [PATCH 121/176] Camera:HAL: Make MetaData Buffer count >= Preview
+ Buffer Count
+
+Meta Data Buffeer count should be atleast >= Preview buffer
+count for forming a matched super Buffer in ZSL case.
+
+CRs-Fixed: 636521
+
+Conflicts:
+	QCamera2/HAL/QCamera2HWI.cpp
+Change-Id: Ifbeecee1f89920572b328a94782aba29357bcdea
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ca75743..26edc7e 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1487,7 +1487,9 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+     case CAM_STREAM_TYPE_METADATA:
+         {
+             if (mParameters.isZSLMode()) {
+-                bufferCnt = zslQBuffers + minCircularBufNum;
++                // MetaData buffers should be >= (Preview buffers-minUndequeCount)
++                bufferCnt = zslQBuffers + minCircularBufNum +
++                            EXTRA_ZSL_PREVIEW_STREAM_BUF;
+             } else {
+                 bufferCnt = minCaptureBuffers +
+                             mParameters.getNumOfExtraHDRInBufsIfNeeded() -
+-- 
+1.8.3.1
+

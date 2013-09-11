@@ -1,0 +1,30 @@
+From 6f3f7d02fa020af9faa768ab75b8b1de4bb42fee Mon Sep 17 00:00:00 2001
+From: Krupal Divvela <kdivvela@qti.qualcomm.com>
+Date: Thu, 20 Feb 2014 16:56:36 +0530
+Subject: [PATCH 094/176] Camera: workaround for compilation issue with jb_3.2
+ HAL on kk_3.5
+
+Change-Id: I70643c988746e13c1a12c60cf3bd846abaef3b48
+---
+ QCamera2/HAL/test/qcamera_test.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/HAL/test/qcamera_test.cpp b/QCamera2/HAL/test/qcamera_test.cpp
+index 63e054b..773aabd 100644
+--- a/QCamera2/HAL/test/qcamera_test.cpp
++++ b/QCamera2/HAL/test/qcamera_test.cpp
+@@ -570,9 +570,9 @@ status_t CameraContext::startPreview()
+ 
+         gbp = mPreviewSurface->getIGraphicBufferProducer();
+ #ifdef USE_VENDOR_CAMERA_EXT
+-        ret |= mCamera->setPreviewTarget(gbp);
++        //ret |= mCamera->setPreviewTarget(gbp);
+ #else
+-        ret |= mCamera->setPreviewTexture(gbp);
++        //ret |= mCamera->setPreviewTexture(gbp);
+ #endif
+ 
+ #else
+-- 
+1.8.3.1
+

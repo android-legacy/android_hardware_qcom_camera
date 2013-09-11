@@ -1,0 +1,53 @@
+From 45568fdca4268ececf5d0ecce0f45878788ea30b Mon Sep 17 00:00:00 2001
+From: Ashok Raj Deenadayalan <adeena@codeaurora.org>
+Date: Tue, 11 Nov 2014 12:15:49 +0530
+Subject: [PATCH 141/176] QCamera2: move socket to folder camera
+
+Move camera socket from folder /data to folder
+/data/misc/camera. This is because of SE Android -
+need to specify camera permiissions to camera
+specific folder instead whole /data folder.
+
+Change-Id: Ia9f9b5e4cc7d7c2fc8d06402b0ddf25fc8df20b4
+---
+ QCamera2/stack/mm-camera-interface/Android.mk           | 4 ++++
+ QCamera2/stack/mm-camera-interface/src/mm_camera_sock.c | 8 +++++++-
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/Android.mk b/QCamera2/stack/mm-camera-interface/Android.mk
+index 210ae31..464e756 100755
+--- a/QCamera2/stack/mm-camera-interface/Android.mk
++++ b/QCamera2/stack/mm-camera-interface/Android.mk
+@@ -22,6 +22,10 @@ ifeq ($(call is-board-platform-in-list,msm8974 msm8226 msm8610),true)
+ endif
+ 
+ LOCAL_CFLAGS += -D_ANDROID_
++ifneq ($(call is-platform-sdk-version-at-least,20),true)
++LOCAL_CFLAGS += -DUSE_KK_CODE
++endif
++
+ LOCAL_COPY_HEADERS_TO := mm-camera-interface
+ LOCAL_COPY_HEADERS += ../common/cam_intf.h
+ LOCAL_COPY_HEADERS += ../common/cam_types.h
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_sock.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_sock.c
+index 58953d1..c172db4 100755
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_sock.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_sock.c
+@@ -75,7 +75,13 @@ int mm_camera_socket_create(int cam_id, mm_camera_sock_type_t sock_type)
+ 
+     memset(&sock_addr, 0, sizeof(sock_addr));
+     sock_addr.sun_family = AF_UNIX;
+-    snprintf(sock_addr.sun_path, UNIX_PATH_MAX, "/data/cam_socket%d", cam_id);
++    snprintf(sock_addr.sun_path, UNIX_PATH_MAX,
++#ifdef USE_KK_CODE
++        "data/cam_socket%d",
++#else
++	"/data/misc/camera/cam_socket%d",
++#endif
++        cam_id);
+     if((rc = connect(socket_fd, (struct sockaddr *) &sock_addr,
+       sizeof(sock_addr))) != 0) {
+       close(socket_fd);
+-- 
+1.8.3.1
+

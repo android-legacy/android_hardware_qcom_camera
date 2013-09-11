@@ -1,0 +1,27 @@
+From db6923509f51a2551380f98b2f80d4b1a84373b9 Mon Sep 17 00:00:00 2001
+From: Chandan Gera <cgera@codeaurora.org>
+Date: Wed, 19 Feb 2014 11:21:46 +0530
+Subject: [PATCH 128/176] Camera: Add data type for 10 bit meta data
+
+Adding new data type for 10 bit meta data.
+
+Change-Id: I7224f6c61ffd0878ddd266dd43ebc1b2e76d14de
+---
+ QCamera2/stack/common/cam_types.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 19c2410..428fd78 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -214,6 +214,7 @@ typedef enum {
+     /* generic 8-bit raw */
+     CAM_FORMAT_JPEG_RAW_8BIT,
+     CAM_FORMAT_META_RAW_8BIT,
++    CAM_FORMAT_META_RAW_10BIT,
+ 
+     CAM_FORMAT_MAX
+ } cam_format_t;
+-- 
+1.8.3.1
+

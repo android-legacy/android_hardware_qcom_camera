@@ -1,0 +1,282 @@
+From 6333ca75e49b03f9d2e44a5f3c02fc98ec6a9917 Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Tue, 10 Sep 2013 12:28:12 -0700
+Subject: [PATCH 003/176] QCamera2: Fix exif tags memleak
+
+1. Reinstate the call to mm_jpeg_destroy_job() when encoding
+is complete.
+2. Set exif count to 0 from mm_jpegdec_create_session().
+3. Create mm_jpegdec_job_done() and mm_jpegdec_destroy_job() for
+decoder.
+4. Move mm_jpeg_job_done() to mm_jpeg.c
+
+Change-Id: I590f9ebb25e78c36bfb3fc53276b2df6229ffae9
+---
+ QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h     |  1 -
+ .../stack/mm-jpeg-interface/inc/mm_jpeg_inlines.h  | 29 ----------
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c     | 46 +++++++++++++---
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpegdec.c  | 62 ++++++++++++++++++++--
+ 4 files changed, 99 insertions(+), 39 deletions(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
+index 00f9a81..1dfe50b 100644
+--- a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
++++ b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
+@@ -387,7 +387,6 @@ extern int32_t mm_jpeg_create_session(mm_jpeg_obj *my_obj,
+   uint32_t* p_session_id);
+ extern int32_t mm_jpeg_destroy_session_by_id(mm_jpeg_obj *my_obj,
+   uint32_t session_id);
+-extern int32_t mm_jpeg_destroy_job(mm_jpeg_job_session_t *p_session);
+ 
+ extern int32_t mm_jpegdec_init(mm_jpeg_obj *my_obj);
+ extern int32_t mm_jpegdec_deinit(mm_jpeg_obj *my_obj);
+diff --git a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_inlines.h b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_inlines.h
+index 0a8025b..39fec8d 100644
+--- a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_inlines.h
++++ b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_inlines.h
+@@ -65,35 +65,6 @@ static inline mm_jpeg_job_session_t *mm_jpeg_get_session(mm_jpeg_obj *my_obj, ui
+   return p_session;
+ }
+ 
+-/** mm_jpeg_session_encode:
+- *
+- *  Arguments:
+- *    @p_session: encode session
+- *
+- *  Return:
+- *       OMX_ERRORTYPE
+- *
+- *  Description:
+- *       Start the encoding
+- *
+- **/
+-static inline void mm_jpeg_job_done(mm_jpeg_job_session_t *p_session)
+-{
+-  mm_jpeg_obj *my_obj = (mm_jpeg_obj *)p_session->jpeg_obj;
+-  mm_jpeg_job_q_node_t *node = NULL;
+-
+-  /*remove the job*/
+-  node = mm_jpeg_queue_remove_job_by_job_id(&my_obj->ongoing_job_q,
+-    p_session->jobId);
+-  if (node) {
+-    free(node);
+-  }
+-  p_session->encoding = OMX_FALSE;
+-
+-  /* wake up jobMgr thread to work on new job if there is any */
+-  cam_sem_post(&my_obj->job_mgr.job_sem);
+-}
+-
+ /** mm_jpeg_get_job_idx:
+  *
+  *  Arguments:
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index 13e7e88..2cb5dd4 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -55,6 +55,8 @@ OMX_ERRORTYPE mm_jpeg_event_handler(OMX_HANDLETYPE hComponent,
+     OMX_U32 nData2,
+     OMX_PTR pEventData);
+ 
++static int32_t mm_jpegenc_destroy_job(mm_jpeg_job_session_t *p_session);
++static void mm_jpegenc_job_done(mm_jpeg_job_session_t *p_session);
+ 
+ /** mm_jpeg_session_send_buffers:
+  *
+@@ -1009,7 +1011,7 @@ OMX_BOOL mm_jpeg_session_abort(mm_jpeg_job_session_t *p_session)
+       CDBG("%s:%d] OMX_SendCommand returned error %d", __func__, __LINE__, ret);
+       return 1;
+     }
+-    rc = mm_jpeg_destroy_job(p_session);
++    rc = mm_jpegenc_destroy_job(p_session);
+     if (rc != 0) {
+       CDBG("%s:%d] Destroy job returned error %d", __func__, __LINE__, rc);
+     }
+@@ -1325,7 +1327,7 @@ error:
+   }
+ 
+   /*remove the job*/
+-  mm_jpeg_job_done(p_session);
++  mm_jpegenc_job_done(p_session);
+   CDBG("%s:%d] Error X ", __func__, __LINE__);
+ 
+   return rc;
+@@ -1833,7 +1835,7 @@ int32_t mm_jpeg_create_session(mm_jpeg_obj *my_obj,
+   return rc;
+ }
+ 
+-/** mm_jpeg_destroy_job
++/** mm_jpegenc_destroy_job
+  *
+  *  Arguments:
+  *    @p_session: Session obj
+@@ -1845,7 +1847,7 @@ int32_t mm_jpeg_create_session(mm_jpeg_obj *my_obj,
+  *       Destroy the job based paramenters
+  *
+  **/
+-int32_t mm_jpeg_destroy_job(mm_jpeg_job_session_t *p_session)
++static int32_t mm_jpegenc_destroy_job(mm_jpeg_job_session_t *p_session)
+ {
+   mm_jpeg_encode_job_t *p_jobparams = &p_session->encode_job;
+   int i = 0, rc = 0;
+@@ -1864,6 +1866,38 @@ int32_t mm_jpeg_destroy_job(mm_jpeg_job_session_t *p_session)
+   return rc;
+ }
+ 
++/** mm_jpeg_session_encode:
++ *
++ *  Arguments:
++ *    @p_session: encode session
++ *
++ *  Return:
++ *       OMX_ERRORTYPE
++ *
++ *  Description:
++ *       Start the encoding
++ *
++ **/
++static void mm_jpegenc_job_done(mm_jpeg_job_session_t *p_session)
++{
++  mm_jpeg_obj *my_obj = (mm_jpeg_obj *)p_session->jpeg_obj;
++  mm_jpeg_job_q_node_t *node = NULL;
++
++  /*Destroy job related params*/
++  mm_jpegenc_destroy_job(p_session);
++
++  /*remove the job*/
++  node = mm_jpeg_queue_remove_job_by_job_id(&my_obj->ongoing_job_q,
++    p_session->jobId);
++  if (node) {
++    free(node);
++  }
++  p_session->encoding = OMX_FALSE;
++
++  /* wake up jobMgr thread to work on new job if there is any */
++  cam_sem_post(&my_obj->job_mgr.job_sem);
++}
++
+ /** mm_jpeg_destroy_session:
+  *
+  *  Arguments:
+@@ -2103,7 +2137,7 @@ OMX_ERRORTYPE mm_jpeg_fbd(OMX_HANDLETYPE hComponent,
+       p_session->params.userdata);
+ 
+     /* remove from ready queue */
+-    mm_jpeg_job_done(p_session);
++    mm_jpegenc_job_done(p_session);
+   }
+   pthread_mutex_unlock(&p_session->lock);
+   CDBG("%s:%d] ", __func__, __LINE__);
+@@ -2152,7 +2186,7 @@ OMX_ERRORTYPE mm_jpeg_event_handler(OMX_HANDLETYPE hComponent,
+       }
+ 
+       /* remove from ready queue */
+-      mm_jpeg_job_done(p_session);
++      mm_jpegenc_job_done(p_session);
+     }
+     pthread_cond_signal(&p_session->cond);
+   } else if (eEvent == OMX_EventCmdComplete) {
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpegdec.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpegdec.c
+index 65b7de8..0001714 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpegdec.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpegdec.c
+@@ -53,6 +53,60 @@ OMX_ERRORTYPE mm_jpegdec_event_handler(OMX_HANDLETYPE hComponent,
+     OMX_U32 nData2,
+     OMX_PTR pEventData);
+ 
++
++/** mm_jpegdec_destroy_job
++ *
++ *  Arguments:
++ *    @p_session: Session obj
++ *
++ *  Return:
++ *       0 for success else failure
++ *
++ *  Description:
++ *       Destroy the job based paramenters
++ *
++ **/
++static int32_t mm_jpegdec_destroy_job(mm_jpeg_job_session_t *p_session)
++{
++  mm_jpeg_decode_job_t *p_jobparams = &p_session->decode_job;
++  int32_t rc = 0;
++
++  return rc;
++}
++
++/** mm_jpeg_job_done:
++ *
++ *  Arguments:
++ *    @p_session: decode session
++ *
++ *  Return:
++ *       OMX_ERRORTYPE
++ *
++ *  Description:
++ *       Finalize the job
++ *
++ **/
++static void mm_jpegdec_job_done(mm_jpeg_job_session_t *p_session)
++{
++  mm_jpeg_obj *my_obj = (mm_jpeg_obj *)p_session->jpeg_obj;
++  mm_jpeg_job_q_node_t *node = NULL;
++
++  /*Destroy job related params*/
++  mm_jpegdec_destroy_job(p_session);
++
++  /*remove the job*/
++  node = mm_jpeg_queue_remove_job_by_job_id(&my_obj->ongoing_job_q,
++    p_session->jobId);
++  if (node) {
++    free(node);
++  }
++  p_session->encoding = OMX_FALSE;
++
++  /* wake up jobMgr thread to work on new job if there is any */
++  cam_sem_post(&my_obj->job_mgr.job_sem);
++}
++
++
+ /** mm_jpegdec_session_send_buffers:
+  *
+  *  Arguments:
+@@ -163,6 +217,8 @@ OMX_ERRORTYPE mm_jpegdec_session_create(mm_jpeg_job_session_t* p_session)
+   p_session->omx_callbacks.EmptyBufferDone = mm_jpegdec_ebd;
+   p_session->omx_callbacks.FillBufferDone = mm_jpegdec_fbd;
+   p_session->omx_callbacks.EventHandler = mm_jpegdec_event_handler;
++  p_session->exif_count_local = 0;
++
+   rc = OMX_GetHandle(&p_session->omx_handle,
+     "OMX.qcom.image.jpeg.decoder",
+     (void *)p_session,
+@@ -658,7 +714,7 @@ error:
+   }
+ 
+   /*remove the job*/
+-  mm_jpeg_job_done(p_session);
++  mm_jpegdec_job_done(p_session);
+   CDBG("%s:%d] Error X ", __func__, __LINE__);
+ 
+   return rc;
+@@ -936,7 +992,7 @@ OMX_ERRORTYPE mm_jpegdec_fbd(OMX_HANDLETYPE hComponent,
+       p_session->dec_params.userdata);
+ 
+     /* remove from ready queue */
+-    mm_jpeg_job_done(p_session);
++    mm_jpegdec_job_done(p_session);
+   }
+   pthread_mutex_unlock(&p_session->lock);
+   CDBG("%s:%d] ", __func__, __LINE__);
+@@ -984,7 +1040,7 @@ OMX_ERRORTYPE mm_jpegdec_event_handler(OMX_HANDLETYPE hComponent,
+       }
+ 
+       /* remove from ready queue */
+-      mm_jpeg_job_done(p_session);
++      mm_jpegdec_job_done(p_session);
+     }
+     pthread_cond_signal(&p_session->cond);
+   } else if (eEvent == OMX_EventCmdComplete) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,47 @@
+From 378a6391cf144c5232ec266acd5be8c167840e16 Mon Sep 17 00:00:00 2001
+From: Ivan Evlogiev <ivanevlogiev@codeaurora.org>
+Date: Thu, 14 Nov 2013 09:55:22 +0200
+Subject: [PATCH 057/176] QCamera2: Disable HDR thumbnail reprocessing
+
+HDR thumbnail reprocessing is not needed
+
+CRs-Fixed: 575446
+Change-Id: I83c9b42069d04fc0268bd16a9e8020cc599c5137
+---
+ QCamera2/HAL/QCameraParameters.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index e00ca5a..48924f1 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -581,7 +581,7 @@ QCameraParameters::QCameraParameters()
+       m_AdjustFPS(NULL),
+       m_bHDR1xFrameEnabled(true),
+       m_HDRSceneEnabled(false),
+-      m_bHDRThumbnailProcessNeeded(true),
++      m_bHDRThumbnailProcessNeeded(false),
+       m_bHDR1xExtraBufferNeeded(true),
+       m_bHDROutputCropEnabled(false),
+       m_tempMap()
+@@ -653,7 +653,7 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_AdjustFPS(NULL),
+     m_bHDR1xFrameEnabled(true),
+     m_HDRSceneEnabled(false),
+-    m_bHDRThumbnailProcessNeeded(true),
++    m_bHDRThumbnailProcessNeeded(false),
+     m_bHDR1xExtraBufferNeeded(true),
+     m_bHDROutputCropEnabled(false),
+     m_tempMap()
+@@ -3828,7 +3828,7 @@ int32_t QCameraParameters::initDefaultParameters()
+     m_bHDREnabled = false;
+     m_bHDR1xFrameEnabled = true;
+ 
+-    m_bHDRThumbnailProcessNeeded = true;
++    m_bHDRThumbnailProcessNeeded = false;
+     m_bHDR1xExtraBufferNeeded = true;
+     for (uint32_t i=0; i<m_pCapability->hdr_bracketing_setting.num_frames; i++) {
+         if (0 == m_pCapability->hdr_bracketing_setting.exp_val.values[i]) {
+-- 
+1.8.3.1
+

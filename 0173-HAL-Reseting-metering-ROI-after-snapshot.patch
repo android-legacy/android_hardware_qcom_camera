@@ -1,0 +1,50 @@
+From 0ff225414cda77a2c18da3ad5d32b1dfd0fcece3 Mon Sep 17 00:00:00 2001
+From: manish gotefode <mgote@codeaurora.org>
+Date: Tue, 20 Aug 2013 12:41:18 +0530
+Subject: [PATCH 173/176] HAL: Reseting metering ROI after snapshot.
+
+while setting the FocusArea and MeteringArea
+parameters after starting preview again. These
+parameter were not getting reflected i.e. ROI
+was not getting reset.this patch will solve the
+same
+
+Change-Id: I124f52b4c38637459d430d595c450eb5f1b01b15
+CRs-Fixed: 525483
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 12 ------------
+ 1 file changed, 12 deletions(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index 8c4bd47..b244687 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -1962,12 +1962,6 @@ status_t QCameraHardwareInterface::setFocusAreas(const QCameraParameters& params
+         mParameters.set(QCameraParameters::KEY_FOCUS_AREAS, str);
+         num_areas_found = 1; //temp; need to change after the multi-roi is enabled
+ 
+-        //if the native_set_parms is called when preview is not started, it
+-        //crashes in lower layer, so return of preview is not started
+-        if(mPreviewState == QCAMERA_HAL_PREVIEW_STOPPED) {
+-            delete areas;
+-            return NO_ERROR;
+-        }
+ 
+         //for special area string (0, 0, 0, 0, 0), set the num_areas_found to 0,
+         //so no action is takenby the lower layer
+@@ -2036,12 +2030,6 @@ status_t QCameraHardwareInterface::setMeteringAreas(const QCameraParameters& par
+         }
+         mParameters.set(QCameraParameters::KEY_METERING_AREAS, str);
+ 
+-        //if the native_set_parms is called when preview is not started, it
+-        //crashes in lower layer, so return of preview is not started
+-        if(mPreviewState == QCAMERA_HAL_PREVIEW_STOPPED) {
+-            delete areas;
+-            return NO_ERROR;
+-        }
+ 
+         num_areas_found = 1; //temp; need to change after the multi-roi is enabled
+ 
+-- 
+1.8.3.1
+

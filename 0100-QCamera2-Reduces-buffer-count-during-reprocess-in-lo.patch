@@ -1,0 +1,58 @@
+From 797417f2060c120d93cf0c13eb495009957a2891 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 9 Sep 2013 18:41:55 -0700
+Subject: [PATCH 100/176] QCamera2: Reduces buffer count during reprocess in
+ longshot
+
+- The buffer count in reprocess channel can
+  be reduced to match the number of stages during
+  buffer processing. Currently this change will
+  allocate a buffer for WNR, CPP, Jpeg encoding
+  and potentially save thread.
+  Additionally the buffer count for the reprocess
+  channel in legacy burst is also limited to the
+  same number of stages.
+
+Change-Id: I23b2199a895d47633c8d778fa905b889945f3040
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index d114049..e3256ae 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -42,6 +42,7 @@
+ #define CAMERA_MIN_STREAMING_BUFFERS     3
+ #define CAMERA_MIN_JPEG_ENCODING_BUFFERS 2
+ #define CAMERA_MIN_VIDEO_BUFFERS         9
++#define CAMERA_LONGSHOT_STAGES           4
+ 
+ #define HDR_CONFIDENCE_THRESHOLD 0.4
+ 
+@@ -1486,8 +1487,9 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+     case CAM_STREAM_TYPE_OFFLINE_PROC:
+         {
+             bufferCnt = minCaptureBuffers;
+-            if (bufferCnt > maxStreamBuf) {
+-                bufferCnt = maxStreamBuf;
++            if ((mLongshotEnabled) ||
++                    ( bufferCnt > CAMERA_LONGSHOT_STAGES ) ) {
++                bufferCnt = CAMERA_LONGSHOT_STAGES;
+             }
+         }
+         break;
+@@ -3871,10 +3873,6 @@ QCameraReprocessChannel *QCamera2HardwareInterface::addOnlineReprocChannel(
+               gCamCapability[mCameraId]->hdr_bracketing_setting.num_frames;
+     }
+ 
+-    if ( mLongshotEnabled ) {
+-        minStreamBufNum = getBufNumRequired(CAM_STREAM_TYPE_PREVIEW);
+-    }
+-
+     ALOGD("%s: Allocating %d reproc buffers",__func__,minStreamBufNum);
+ 
+     rc = pChannel->addReprocStreamsFromSource(*this,
+-- 
+1.8.3.1
+

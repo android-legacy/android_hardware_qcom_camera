@@ -1,0 +1,62 @@
+From 89c30a73902f8fc3d1ebec98eebc8bef222f9fcb Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Thu, 31 Oct 2013 17:50:17 +0530
+Subject: [PATCH 049/176] Camera: Add scaled picture sizes in a different
+ camera parameter.
+
+As of now, scaled picture sizes get appended in regular supported
+picture sizes camera parameter. To have control of features which
+might not be supported in scaled sizes, we are seperating out the
+scaled sizes from regular picture sizes.
+
+Change-Id: Ia2ce02aaa1a1a62e29cb2970fdd835ca4f851f36
+---
+ QCamera2/HAL/QCameraParameters.cpp | 10 +++++-----
+ QCamera2/HAL/QCameraParameters.h   |  3 +++
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 1cc65c8..4687f2b 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -96,6 +96,7 @@ const char QCameraParameters::KEY_QC_NO_DISPLAY_MODE[] = "no-display-mode";
+ const char QCameraParameters::KEY_QC_RAW_PICUTRE_SIZE[] = "raw-size";
+ const char QCameraParameters::KEY_QC_SUPPORTED_SKIN_TONE_ENHANCEMENT_MODES[] = "skinToneEnhancement-values";
+ const char QCameraParameters::KEY_QC_SUPPORTED_LIVESNAPSHOT_SIZES[] = "supported-live-snapshot-sizes";
++const char QCameraParameters::KEY_QC_SCALED_PICTURE_SIZES[] = "scaled-picture-sizes";
+ const char QCameraParameters::KEY_QC_HDR_NEED_1X[] = "hdr-need-1x";
+ const char QCameraParameters::KEY_QC_PREVIEW_FLIP[] = "preview-flip";
+ const char QCameraParameters::KEY_QC_VIDEO_FLIP[] = "video-flip";
+@@ -3393,11 +3394,10 @@ int32_t QCameraParameters::initDefaultParameters()
+             m_pCapability->scale_picture_sizes_cnt, m_pCapability->scale_picture_sizes,
+             m_pCapability->picture_sizes_tbl_cnt, m_pCapability->picture_sizes_tbl);
+         if(rc_s == NO_ERROR){
+-            cam_dimension_t *totalSizeTbl = m_reprocScaleParam.getTotalSizeTbl();
+-            uint8_t totalSizeCnt = m_reprocScaleParam.getTotalSizeTblCnt();
+-            String8 pictureSizeValues = createSizesString(totalSizeTbl, totalSizeCnt);
+-            set(KEY_SUPPORTED_PICTURE_SIZES, pictureSizeValues.string());
+-            ALOGE("%s: scaled supported pic sizes: %s", __func__, pictureSizeValues.string());
++            String8 scaledPictureSizeValues = createSizesString(
++                m_pCapability->scale_picture_sizes, m_pCapability->scale_picture_sizes_cnt);
++            set(KEY_QC_SCALED_PICTURE_SIZES, scaledPictureSizeValues.string());
++            ALOGE("%s: scaled supported pic sizes: %s", __func__, scaledPictureSizeValues.string());
+         }else{
+             m_reprocScaleParam.setScaleEnable(false);
+             ALOGE("%s: reset scaled picture size table failed.", __func__);
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index fdd49f0..cd717aa 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -121,6 +121,9 @@ public:
+     // Supported live snapshot sizes
+     static const char KEY_QC_SUPPORTED_LIVESNAPSHOT_SIZES[];
+ 
++    // Supported scaled picture sizes
++    static const char KEY_QC_SCALED_PICTURE_SIZES[];
++
+     // Supported Raw formats
+     static const char KEY_QC_SUPPORTED_RAW_FORMATS[];
+     static const char KEY_QC_RAW_FORMAT[];
+-- 
+1.8.3.1
+

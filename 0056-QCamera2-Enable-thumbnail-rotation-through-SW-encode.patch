@@ -1,0 +1,137 @@
+From d464ae290bd44fa38b2448e75d28ebe3c44ba5a8 Mon Sep 17 00:00:00 2001
+From: Shwetha Kotekar <skotekar@codeaurora.org>
+Date: Wed, 30 Oct 2013 17:13:18 -0700
+Subject: [PATCH 056/176] QCamera2: Enable thumbnail rotation through SW
+ encoder
+
+1) Add OMX extension for thumbnail rotation and send
+   value from HAL to OMX
+2) Since postview is used for thumbnail in non-ZSL case,
+   disable reprocess for postview. This bypasses reprocess
+   of the thumbnail in non-ZSL
+3) Also disable reprocess for preview stream since thumbnail
+   uses preview stream in ZSL
+
+Change-Id: I58b2c07766a085180a9dc82de61c1f64888b4062
+---
+ QCamera2/HAL/QCameraChannel.cpp                | 16 ++++++++++++++++
+ QCamera2/HAL/QCameraPostProc.cpp               | 21 +++------------------
+ QCamera2/stack/common/mm_jpeg_interface.h      |  3 +++
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c |  1 +
+ mm-image-codec/qomx_core/QOMX_JpegExtensions.h |  1 +
+ 5 files changed, 24 insertions(+), 18 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraChannel.cpp b/QCamera2/HAL/QCameraChannel.cpp
+index 1332b2e..afb35e2 100644
+--- a/QCamera2/HAL/QCameraChannel.cpp
++++ b/QCamera2/HAL/QCameraChannel.cpp
+@@ -716,6 +716,14 @@ int32_t QCameraReprocessChannel::addReprocStreamsFromSource(QCameraAllocator& al
+                 continue;
+             }
+ 
++            if (pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
++                pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW)) {
++                // Skip postview: in non zsl case, dont want to send
++                // thumbnail through reprocess.
++                // Skip preview: for same reason for zsl case
++                continue;
++            }
++
+             if(pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
+                pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
+                pStream->isOrignalTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
+@@ -909,6 +917,14 @@ int32_t QCameraReprocessChannel::doReprocess(mm_camera_super_buf_t *frame)
+                 continue;
+             }
+ 
++            if (pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
++                pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW)) {
++                // Skip postview: In non zsl case, dont want to send
++                // thumbnail through reprocess.
++                // Skip preview: for same reason in ZSL case
++                continue;
++            }
++
+             cam_stream_parm_buffer_t param;
+             memset(&param, 0, sizeof(cam_stream_parm_buffer_t));
+             param.type = CAM_STREAM_PARAM_TYPE_DO_REPROCESS;
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index ec09bb8..a4d1b33 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -382,14 +382,8 @@ int32_t QCameraPostProcessor::getJpegEncodingConfig(mm_jpeg_encode_params_t& enc
+         thumb_stream->getFrameDimension(src_dim);
+         encode_parm.thumb_dim.src_dim = src_dim;
+         m_parent->getThumbnailSize(encode_parm.thumb_dim.dst_dim);
+-        int rotation = m_parent->getJpegRotation();
+-        if (rotation == 90 || rotation ==270) {
+-            // swap dimension if rotation is 90 or 270
+-            int32_t temp = encode_parm.thumb_dim.dst_dim.height;
+-            encode_parm.thumb_dim.dst_dim.height =
+-                encode_parm.thumb_dim.dst_dim.width;
+-            encode_parm.thumb_dim.dst_dim.width = temp;
+-          }
++
++        encode_parm.thumb_rotation = m_parent->getJpegRotation();
+         encode_parm.thumb_dim.crop = crop;
+     }
+ 
+@@ -1386,16 +1380,7 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+         }
+ 
+         m_parent->getThumbnailSize(jpg_job.encode_job.thumb_dim.dst_dim);
+-        int rotation = m_parent->getJpegRotation();
+-        if ((rotation == 90 || rotation == 270)
+-            && jpg_job.encode_job.rotation == 0) {
+-            // swap dimension if rotation is 90 or 270,
+-            // and the rotation is already done in cpp.
+-            int32_t temp = jpg_job.encode_job.thumb_dim.dst_dim.height;
+-            jpg_job.encode_job.thumb_dim.dst_dim.height =
+-                jpg_job.encode_job.thumb_dim.dst_dim.width;
+-            jpg_job.encode_job.thumb_dim.dst_dim.width = temp;
+-        }
++
+         jpg_job.encode_job.thumb_dim.crop = crop;
+         jpg_job.encode_job.thumb_index = thumb_frame->buf_idx;
+         ALOGD("%s, thumbnail src w/h (%dx%d), dst w/h (%dx%d)", __func__,
+diff --git a/QCamera2/stack/common/mm_jpeg_interface.h b/QCamera2/stack/common/mm_jpeg_interface.h
+index d0d8a36..e51776f 100644
+--- a/QCamera2/stack/common/mm_jpeg_interface.h
++++ b/QCamera2/stack/common/mm_jpeg_interface.h
+@@ -170,6 +170,9 @@ typedef struct {
+   /* rotation informaiton */
+   int rotation;
+ 
++  /* thumb rotation informaiton */
++  int thumb_rotation;
++
+   /* main image dimension */
+   mm_jpeg_dim_t main_dim;
+ 
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index 484e9b5..31e4e6b 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -757,6 +757,7 @@ OMX_ERRORTYPE mm_jpeg_session_config_thumbnail(mm_jpeg_job_session_t* p_session)
+   thumbnail_info.crop_info.nHeight = p_thumb_dim->crop.height;
+   thumbnail_info.crop_info.nLeft = p_thumb_dim->crop.left;
+   thumbnail_info.crop_info.nTop = p_thumb_dim->crop.top;
++  thumbnail_info.rotation = p_params->thumb_rotation;
+ 
+   if ((p_thumb_dim->dst_dim.width > p_thumb_dim->src_dim.width)
+     || (p_thumb_dim->dst_dim.height > p_thumb_dim->src_dim.height)) {
+diff --git a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+index f4f2e63..e6b9d3f 100644
+--- a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
++++ b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+@@ -176,6 +176,7 @@ typedef struct {
+   OMX_U32 output_width;
+   OMX_U32 output_height;
+   QOMX_YUV_FRAME_INFO tmbOffset;
++  OMX_U32 rotation;
+ } QOMX_THUMBNAIL_INFO;
+ 
+ /**qomx_mobicat
+-- 
+1.8.3.1
+

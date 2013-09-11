@@ -1,0 +1,263 @@
+From a9940db77896e8ea617fdeee459ab7e2783f8843 Mon Sep 17 00:00:00 2001
+From: yuyang <yuyang@codeaurora.org>
+Date: Fri, 25 Oct 2013 10:42:06 -0700
+Subject: [PATCH 051/176] QCamera2: Supports torch flash mode configuration
+ without preview
+
+Currently the camera would expect from the client to
+start preview first before trying to enable/disable
+torch mode. This change works around the aforementioned
+limitation by creating a dummy preview channel.
+
+Change-Id: Ida3570a54d84765ff341f3510ad98b7c52ab3f44
+Crs-Fixed: 555936
+
+Conflicts:
+
+	QCamera2/HAL/QCameraParameters.cpp
+---
+ QCamera2/HAL/QCamera2HWI.cpp       | 69 +++++++++++++++++++++++++++++++++++---
+ QCamera2/HAL/QCamera2HWI.h         |  8 ++++-
+ QCamera2/HAL/QCameraParameters.cpp | 22 +++++++++++-
+ QCamera2/HAL/QCameraParameters.h   | 15 ++++++++-
+ 4 files changed, 107 insertions(+), 7 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 6200c9d..6060f3c 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1110,7 +1110,13 @@ int QCamera2HardwareInterface::openCamera()
+         gCamCapability[mCameraId]->padding_info.plane_padding = padding_info.plane_padding;
+     }
+ 
+-    mParameters.init(gCamCapability[mCameraId], mCameraHandle, this);
++    mParameters.init(gCamCapability[mCameraId], mCameraHandle, this, this);
++
++    rc = m_thermalAdapter.init(this);
++    if (rc != 0) {
++        ALOGE("Init thermal adapter failed");
++    }
++
+     mCameraOpened = true;
+ 
+     return NO_ERROR;
+@@ -1293,6 +1299,53 @@ int QCamera2HardwareInterface::getCapabilities(int cameraId,
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : prepareTorchCamera
++ *
++ * DESCRIPTION: initializes the camera ( if needed )
++ *              so torch can be configured.
++ *
++ * PARAMETERS :
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int QCamera2HardwareInterface::prepareTorchCamera()
++{
++    int rc = NO_ERROR;
++
++    if ( ( !m_stateMachine.isPreviewRunning() ) &&
++         ( m_channels[QCAMERA_CH_TYPE_PREVIEW] == NULL ) ) {
++        rc = addChannel(QCAMERA_CH_TYPE_PREVIEW);
++    }
++
++    return rc;
++}
++
++/*===========================================================================
++ * FUNCTION   : releaseTorchCamera
++ *
++ * DESCRIPTION: releases all previously acquired camera resources ( if any )
++ *              needed for torch configuration.
++ *
++ * PARAMETERS :
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int QCamera2HardwareInterface::releaseTorchCamera()
++{
++    if ( !m_stateMachine.isPreviewRunning() &&
++         ( m_channels[QCAMERA_CH_TYPE_PREVIEW] != NULL ) ) {
++        delete m_channels[QCAMERA_CH_TYPE_PREVIEW];
++        m_channels[QCAMERA_CH_TYPE_PREVIEW] = NULL;
++    }
++
++    return NO_ERROR;
++}
++
++/*===========================================================================
+  * FUNCTION   : getBufNumRequired
+  *
+  * DESCRIPTION: return number of stream buffers needed for given stream type
+@@ -3226,9 +3279,11 @@ int32_t QCamera2HardwareInterface::addPreviewChannel()
+     bool raw_yuv = false;
+ 
+     if (m_channels[QCAMERA_CH_TYPE_PREVIEW] != NULL) {
+-        // if we had preview channel before, delete it first
+-        delete m_channels[QCAMERA_CH_TYPE_PREVIEW];
+-        m_channels[QCAMERA_CH_TYPE_PREVIEW] = NULL;
++        // Using the no preview torch WA it is possible
++        // to already have a preview channel present before
++        // start preview gets called.
++        ALOGD(" %s : Preview Channel already added!", __func__);
++        return NO_ERROR;
+     }
+ 
+     pChannel = new QCameraChannel(mCameraHandle->camera_handle,
+@@ -3468,6 +3523,12 @@ int32_t QCamera2HardwareInterface::addZSLChannel()
+         m_channels[QCAMERA_CH_TYPE_ZSL] = NULL;
+     }
+ 
++     if (m_channels[QCAMERA_CH_TYPE_PREVIEW] != NULL) {
++        // if we had ZSL channel before, delete it first
++        delete m_channels[QCAMERA_CH_TYPE_PREVIEW];
++        m_channels[QCAMERA_CH_TYPE_PREVIEW] = NULL;
++    }
++
+     pChannel = new QCameraPicChannel(mCameraHandle->camera_handle,
+                                      mCameraHandle->ops);
+     if (NULL == pChannel) {
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index c572e2c..7d14db6 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -165,9 +165,11 @@ private:
+     QCameraCmdThread mProcTh;
+     bool             mActive;
+ };
++
+ class QCamera2HardwareInterface : public QCameraAllocator,
+                                   public QCameraThermalCallback,
+-                                  public QCameraAdjustFPS
++                                  public QCameraAdjustFPS,
++                                  public QCameraTorchInterface
+ {
+ public:
+     /* static variable and functions accessed by camera service */
+@@ -234,6 +236,10 @@ public:
+ 
+     virtual int recalcFPSRange(int &minFPS, int &maxFPS);
+ 
++    // Implementation of QCameraTorchInterface
++    virtual int prepareTorchCamera();
++    virtual int releaseTorchCamera();
++
+     friend class QCameraStateMachine;
+     friend class QCameraPostProcessor;
+     friend class QCameraCbNotifier;
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 1cc65c8..9b4fe52 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -589,6 +589,8 @@ QCameraParameters::QCameraParameters()
+     // TODO: may move to parameter instead of sysprop
+     property_get("persist.debug.sf.showfps", value, "0");
+     m_bDebugFps = atoi(value) > 0 ? true : false;
++    m_bReleaseTorchCamera = false;
++    m_pTorch = NULL;
+ 
+     // For thermal mode, it should be set as system property
+     // because system property applies to all applications, while
+@@ -655,6 +657,8 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_tempMap()
+ {
+     memset(&m_LiveSnapshotSize, 0, sizeof(m_LiveSnapshotSize));
++    m_pTorch = NULL;
++    m_bReleaseTorchCamera = false;
+ }
+ 
+ /*===========================================================================
+@@ -3820,13 +3824,15 @@ int32_t QCameraParameters::initDefaultParameters()
+  *==========================================================================*/
+ int32_t QCameraParameters::init(cam_capability_t *capabilities,
+                                 mm_camera_vtbl_t *mmOps,
+-                                QCameraAdjustFPS *adjustFPS)
++                                QCameraAdjustFPS *adjustFPS,
++                                QCameraTorchInterface *torch)
+ {
+     int32_t rc = NO_ERROR;
+ 
+     m_pCapability = capabilities;
+     m_pCamOpsTbl = mmOps;
+     m_AdjustFPS = adjustFPS;
++    m_pTorch = torch;
+ 
+     //Allocate Set Param Buffer
+     m_pParamHeap = new QCameraHeapMemory(QCAMERA_ION_USE_CACHE);
+@@ -4625,6 +4631,15 @@ int32_t QCameraParameters::setFlash(const char *flashStr)
+                                    flashStr);
+         if (value != NAME_NOT_FOUND) {
+             ALOGV("%s: Setting Flash value %s", __func__, flashStr);
++
++            if ( NULL != m_pTorch ) {
++                if ( value == CAM_FLASH_MODE_TORCH ) {
++                    m_pTorch->prepareTorchCamera();
++                } else {
++                    m_bReleaseTorchCamera = true;
++                }
++            }
++
+             updateParamEntry(KEY_FLASH_MODE, flashStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_LED_MODE,
+@@ -7165,6 +7180,11 @@ int32_t QCameraParameters::commitParamChanges()
+         m_bSceneTransitionAuto = false;
+     }
+ 
++    if ( m_bReleaseTorchCamera && ( NULL != m_pTorch) ) {
++        m_pTorch->releaseTorchCamera();
++        m_bReleaseTorchCamera = false;
++    }
++
+ 
+     return NO_ERROR;
+ }
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index fdd49f0..99a8ad8 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -45,6 +45,14 @@ static const char ExifUndefinedPrefix[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ #define EXIF_ASCII_PREFIX_SIZE           8   //(sizeof(ExifAsciiPrefix))
+ #define FOCAL_LENGTH_DECIMAL_PRECISION   100
+ 
++class QCameraTorchInterface
++{
++public:
++    virtual int prepareTorchCamera() = 0;
++    virtual int releaseTorchCamera() = 0;
++    virtual ~QCameraTorchInterface() {}
++};
++
+ class QCameraAdjustFPS
+ {
+ public:
+@@ -427,7 +435,10 @@ public:
+     void setTouchIndexAf(int x, int y);
+     void getTouchIndexAf(int *x, int *y);
+ 
+-    int32_t init(cam_capability_t *, mm_camera_vtbl_t *, QCameraAdjustFPS *);
++    int32_t init(cam_capability_t *,
++                 mm_camera_vtbl_t *,
++                 QCameraAdjustFPS *,
++                 QCameraTorchInterface *);
+     void deinit();
+     int32_t assign(QCameraParameters& params);
+     int32_t initDefaultParameters();
+@@ -720,6 +731,8 @@ private:
+     bool m_bHDRThumbnailProcessNeeded;        // if thumbnail need to be processed for HDR
+     bool m_bHDR1xExtraBufferNeeded;     // if extra frame with exposure compensation 0 during HDR is needed
+     bool m_bHDROutputCropEnabled;     // if HDR output frame need to be scaled to user resolution
++    QCameraTorchInterface *m_pTorch; // Interface for enabling torch
++    bool m_bReleaseTorchCamera; // Release camera resources after torch gets disabled
+ 
+     DefaultKeyedVector<String8,String8> m_tempMap; // map for temororily store parameters to be set
+ };
+-- 
+1.8.3.1
+

@@ -1,0 +1,143 @@
+From 5cecea2e337fe8f4cc8f176bd027455d7dc48a2c Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Thu, 7 Nov 2013 15:24:54 +0200
+Subject: [PATCH 073/176] QCamera2: Add OMX extension to set JPEG encoder speed
+ mode
+
+Adds an OMX extension which provides ability to set
+the HW encoder speed mode.
+
+Change-Id: I1e7f7d5032b2e16e1a4bca66a938faa96b9ad910
+---
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c | 53 ++++++++++++++++++++++++++
+ mm-image-codec/qomx_core/QOMX_JpegExtensions.h | 22 +++++++++++
+ 2 files changed, 75 insertions(+)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index ebbefb6..5b243fd 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -49,6 +49,8 @@
+ 
+ #define META_KEYFILE "/data/metadata.key"
+ 
++#define MM_JPG_USE_TURBO_CLOCK (0)
++
+ OMX_ERRORTYPE mm_jpeg_ebd(OMX_HANDLETYPE hComponent,
+     OMX_PTR pAppData,
+     OMX_BUFFERHEADERTYPE* pBuffer);
+@@ -477,6 +479,51 @@ OMX_ERRORTYPE mm_jpeg_encoding_mode(
+   return rc;
+ }
+ 
++/** mm_jpeg_speed_mode:
++ *
++ *  Arguments:
++ *    @p_session: job session
++ *
++ *  Return:
++ *       OMX error values
++ *
++ *  Description:
++ *      Configure normal or high speed jpeg
++ *
++ **/
++OMX_ERRORTYPE mm_jpeg_speed_mode(
++  mm_jpeg_job_session_t* p_session)
++{
++  OMX_ERRORTYPE rc = 0;
++  int32_t i = 0;
++  OMX_INDEXTYPE indextype;
++  QOMX_JPEG_SPEED jpeg_speed;
++  int32_t totalSize = 0;
++  mm_jpeg_encode_params_t *p_params = &p_session->params;
++  mm_jpeg_encode_job_t *p_jobparams = &p_session->encode_job;
++
++  rc = OMX_GetExtensionIndex(p_session->omx_handle,
++    QOMX_IMAGE_EXT_JPEG_SPEED_NAME, &indextype);
++  if (rc != OMX_ErrorNone) {
++    CDBG_ERROR("%s:%d] Failed", __func__, __LINE__);
++    return rc;
++  }
++
++  if (MM_JPG_USE_TURBO_CLOCK) {
++    jpeg_speed.speedMode = QOMX_JPEG_SPEED_MODE_HIGH;
++  } else {
++    jpeg_speed.speedMode = QOMX_JPEG_SPEED_MODE_NORMAL;
++  }
++
++  rc = OMX_SetParameter(p_session->omx_handle, indextype, &jpeg_speed);
++  if (rc != OMX_ErrorNone) {
++    CDBG_ERROR("%s:%d] Failed", __func__, __LINE__);
++    return rc;
++  }
++  return rc;
++}
++
++
+ /** mm_jpeg_mem_ops:
+  *
+  *  Arguments:
+@@ -1026,6 +1073,12 @@ OMX_ERRORTYPE mm_jpeg_session_config_main(mm_jpeg_job_session_t *p_session)
+     CDBG_ERROR("%s: config mem ops failed", __func__);
+     return rc;
+   }
++  /* set the jpeg speed mode */
++  rc = mm_jpeg_speed_mode(p_session);
++  if (OMX_ErrorNone != rc) {
++    CDBG_ERROR("%s: config speed mode failed", __func__);
++    return rc;
++  }
+ 
+   return rc;
+ }
+diff --git a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+index 562427e..915cee1 100644
+--- a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
++++ b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+@@ -59,6 +59,7 @@ typedef enum {
+ #define QOMX_IMAGE_EXT_METADATA_NAME      "OMX.QCOM.image.exttype.metadata"
+ #define QOMX_IMAGE_EXT_META_ENC_KEY_NAME      "OMX.QCOM.image.exttype.metaEncKey"
+ #define QOMX_IMAGE_EXT_MEM_OPS_NAME      "OMX.QCOM.image.exttype.mem_ops"
++#define QOMX_IMAGE_EXT_JPEG_SPEED_NAME      "OMX.QCOM.image.exttype.jpeg.speed"
+ 
+ /** QOMX_IMAGE_EXT_INDEXTYPE
+ *  This enum is an extension of the OMX_INDEXTYPE enum and
+@@ -95,6 +96,9 @@ typedef enum {
+   //Name: OMX.QCOM.image.exttype.memOps
+   QOMX_IMAGE_EXT_MEM_OPS = 0x07F0000A,
+ 
++  //Name: OMX.QCOM.image.exttype.jpeg.speed
++  QOMX_IMAGE_EXT_JPEG_SPEED = 0x07F000B,
++
+ } QOMX_IMAGE_EXT_INDEXTYPE;
+ 
+ /** QOMX_BUFFER_INFO
+@@ -283,6 +287,24 @@ typedef struct {
+   int (*get_memory)( omx_jpeg_ouput_buf_t *p_out_buf);
+ } QOMX_MEM_OPS;
+ 
++/** QOMX_JPEG_SPEED_MODE
++* Enum specifying the values for the jpeg
++* speed mode setting
++**/
++typedef enum {
++  QOMX_JPEG_SPEED_MODE_NORMAL,
++  QOMX_JPEG_SPEED_MODE_HIGH
++} QOMX_JPEG_SPEED_MODE;
++
++/** QOMX_JPEG_SPEED
++* Structure used to set the jpeg speed mode
++* parameter
++* @speedMode - jpeg speed mode
++**/
++typedef struct {
++  QOMX_JPEG_SPEED_MODE speedMode;
++} QOMX_JPEG_SPEED;
++
+ #ifdef __cplusplus
+  }
+ #endif
+-- 
+1.8.3.1
+

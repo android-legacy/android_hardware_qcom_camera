@@ -1,0 +1,200 @@
+From 4a5ee4da6722b4eb383272a495e765c96a6b82ee Mon Sep 17 00:00:00 2001
+From: Ivan Evlogiev <ivanevlogiev@codeaurora.org>
+Date: Thu, 17 Oct 2013 15:26:10 -0700
+Subject: [PATCH 046/176] QCamera2: Allocate complete gralloc buffers
+
+- Gralloc (Preview and postview) buffers need to be allocated
+with size that includes stride and scanline
+
+Change-Id: I6eb08b9f0175d57582023bc2d5680aedb893242e
+---
+ QCamera2/HAL/QCamera2HWI.cpp    | 14 ++++++++++----
+ QCamera2/HAL/QCamera2HWI.h      |  2 ++
+ QCamera2/HAL/QCameraAllocator.h |  2 ++
+ QCamera2/HAL/QCameraMem.cpp     | 23 ++++++++++++++++++-----
+ QCamera2/HAL/QCameraMem.h       |  5 +++--
+ QCamera2/HAL/QCameraStream.cpp  |  2 ++
+ 6 files changed, 37 insertions(+), 11 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ed91e77..6200c9d 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1422,6 +1422,8 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+  * PARAMETERS :
+  *   @stream_type  : type of stream
+  *   @size         : size of buffer
++ *   @stride       : stride of buffer
++ *   @scanline     : scanline of buffer
+  *   @bufferCnt    : [IN/OUT] minimum num of buffers to be allocated.
+  *                   could be modified during allocation if more buffers needed
+  *
+@@ -1430,6 +1432,8 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+  *==========================================================================*/
+ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t stream_type,
+                                                             int size,
++                                                            int stride,
++                                                            int scanline,
+                                                             uint8_t &bufferCnt)
+ {
+     int rc = NO_ERROR;
+@@ -1449,8 +1453,9 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+ 
+                 mParameters.getStreamDimension(stream_type, dim);
+                 if (grallocMemory)
+-                    grallocMemory->setWindowInfo(mPreviewWindow, dim.width, dim.height,
+-                            mParameters.getPreviewHalPixelFormat());
++                    grallocMemory->setWindowInfo(mPreviewWindow, dim.width,
++                        dim.height, stride, scanline,
++                        mParameters.getPreviewHalPixelFormat());
+                 mem = grallocMemory;
+             }
+         }
+@@ -1463,8 +1468,9 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+ 
+             mParameters.getStreamDimension(stream_type, dim);
+             if (grallocMemory)
+-                grallocMemory->setWindowInfo(mPreviewWindow, dim.width, dim.height,
+-                        mParameters.getPreviewHalPixelFormat());
++                grallocMemory->setWindowInfo(mPreviewWindow, dim.width,
++                    dim.height, stride, scanline,
++                    mParameters.getPreviewHalPixelFormat());
+             mem = grallocMemory;
+         }
+         break;
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index d15ec5d..c572e2c 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -219,6 +219,8 @@ public:
+     // Implementation of QCameraAllocator
+     virtual QCameraMemory *allocateStreamBuf(cam_stream_type_t stream_type,
+                                              int size,
++                                             int stride,
++                                             int scanline,
+                                              uint8_t &bufferCnt);
+     virtual int32_t allocateMoreStreamBuf(QCameraMemory *mem_obj,
+                                           int size,
+diff --git a/QCamera2/HAL/QCameraAllocator.h b/QCamera2/HAL/QCameraAllocator.h
+index 34a720f..114aca5 100644
+--- a/QCamera2/HAL/QCameraAllocator.h
++++ b/QCamera2/HAL/QCameraAllocator.h
+@@ -43,6 +43,8 @@ class QCameraAllocator {
+ public:
+     virtual QCameraMemory *allocateStreamBuf(cam_stream_type_t stream_type,
+                                              int size,
++                                             int stride,
++                                             int scanline,
+                                              uint8_t &bufferCnt) = 0;
+     virtual int32_t allocateMoreStreamBuf(QCameraMemory *mem_obj,
+                                           int size,
+diff --git a/QCamera2/HAL/QCameraMem.cpp b/QCamera2/HAL/QCameraMem.cpp
+index 7713df0..86e4f67 100644
+--- a/QCamera2/HAL/QCameraMem.cpp
++++ b/QCamera2/HAL/QCameraMem.cpp
+@@ -1043,7 +1043,7 @@ QCameraGrallocMemory::QCameraGrallocMemory(camera_request_memory getMemory)
+ {
+     mMinUndequeuedBuffers = 0;
+     mWindow = NULL;
+-    mWidth = mHeight = 0;
++    mWidth = mHeight = mStride = mScanline = 0;
+     mFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+     mGetMemory = getMemory;
+     for (int i = 0; i < MM_CAMERA_MAX_NUM_FRAMES; i ++) {
+@@ -1075,16 +1075,20 @@ QCameraGrallocMemory::~QCameraGrallocMemory()
+  *   @window  : gralloc ops table ptr
+  *   @width   : width of preview frame
+  *   @height  : height of preview frame
++ *   @stride  : stride of preview frame
++ *   @scanline: scanline of preview frame
+  *   @foramt  : format of preview image
+  *
+  * RETURN     : none
+  *==========================================================================*/
+ void QCameraGrallocMemory::setWindowInfo(preview_stream_ops_t *window,
+-        int width, int height, int format)
++        int width, int height, int stride, int scanline, int format)
+ {
+     mWindow = window;
+     mWidth = width;
+     mHeight = height;
++    mStride = stride;
++    mScanline = scanline;
+     mFormat = format;
+ }
+ 
+@@ -1183,7 +1187,7 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+          goto end;
+     }
+ 
+-    err = mWindow->set_buffers_geometry(mWindow, mWidth, mHeight, mFormat);
++    err = mWindow->set_buffers_geometry(mWindow, mStride, mScanline, mFormat);
+     if (err != 0) {
+          ALOGE("%s: set_buffers_geometry failed: %s (%d)",
+                __func__, strerror(-err), -err);
+@@ -1191,6 +1195,14 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+          goto end;
+     }
+ 
++    err = mWindow->set_crop(mWindow, 0, 0, mWidth, mHeight);
++    if (err != 0) {
++         ALOGE("%s: set_crop failed: %s (%d)",
++               __func__, strerror(-err), -err);
++         ret = UNKNOWN_ERROR;
++         goto end;
++    }
++
+     gralloc_usage = GRALLOC_USAGE_HW_CAMERA_WRITE | GRALLOC_USAGE_PRIVATE_IOMMU_HEAP;
+     err = mWindow->set_usage(mWindow, gralloc_usage);
+     if(err != 0) {
+@@ -1199,8 +1211,9 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+         ret = UNKNOWN_ERROR;
+         goto end;
+     }
+-    ALOGD("%s: usage = %d, geometry: %p, %d, %d, %d",
+-          __func__, gralloc_usage, mWindow, mWidth, mHeight, mFormat);
++    ALOGD("%s: usage = %d, geometry: %p, %d, %d, %d, %d, %d",
++          __func__, gralloc_usage, mWindow, mWidth, mHeight, mStride,
++          mScanline, mFormat);
+ 
+     //Allocate cnt number of buffers from native window
+     for (int cnt = 0; cnt < count; cnt++) {
+diff --git a/QCamera2/HAL/QCameraMem.h b/QCamera2/HAL/QCameraMem.h
+index ae582f6..1dee2cd 100644
+--- a/QCamera2/HAL/QCameraMem.h
++++ b/QCamera2/HAL/QCameraMem.h
+@@ -165,7 +165,8 @@ public:
+     virtual int getMatchBufIndex(const void *opaque, bool metadata) const;
+ 	virtual void *getPtr(int index) const;
+ 
+-    void setWindowInfo(preview_stream_ops_t *window, int width, int height, int format);
++    void setWindowInfo(preview_stream_ops_t *window, int width, int height,
++        int stride, int scanline, int format);
+     // Enqueue/display buffer[index] onto the native window,
+     // and dequeue one buffer from it.
+     // Returns the buffer index of the dequeued buffer.
+@@ -176,7 +177,7 @@ private:
+     int mLocalFlag[MM_CAMERA_MAX_NUM_FRAMES];
+     struct private_handle_t *mPrivateHandle[MM_CAMERA_MAX_NUM_FRAMES];
+     preview_stream_ops_t *mWindow;
+-    int mWidth, mHeight, mFormat;
++    int mWidth, mHeight, mFormat, mStride, mScanline;
+     camera_request_memory mGetMemory;
+     camera_memory_t *mCameraMemory[MM_CAMERA_MAX_NUM_FRAMES];
+     int mMinUndequeuedBuffers;
+diff --git a/QCamera2/HAL/QCameraStream.cpp b/QCamera2/HAL/QCameraStream.cpp
+index 93afac8..b646c30 100644
+--- a/QCamera2/HAL/QCameraStream.cpp
++++ b/QCamera2/HAL/QCameraStream.cpp
+@@ -610,6 +610,8 @@ int32_t QCameraStream::getBufs(cam_frame_len_offset_t *offset,
+     //Allocate and map stream info buffer
+     mStreamBufs = mAllocator.allocateStreamBuf(mStreamInfo->stream_type,
+                                                mFrameLenOffset.frame_len,
++                                               mFrameLenOffset.mp[0].stride,
++                                               mFrameLenOffset.mp[0].scanline,
+                                                numBufAlloc);
+     mNumBufs = numBufAlloc + mNumBufsNeedAlloc;
+ 
+-- 
+1.8.3.1
+

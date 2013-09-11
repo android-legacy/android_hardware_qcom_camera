@@ -1,0 +1,44 @@
+From 93599b8e936227d11f32f8c5698b598a06dbe88a Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Tue, 24 Sep 2013 20:10:10 +0530
+Subject: [PATCH 027/176] camera : Fix race condition in wait-signal API.
+
+Present wait-signal API implementation in HAL uses a
+global strcture m_apiResult. Because of concurrent
+modification of this structure from different threads,
+there is a possibility of race condition where some
+APIs might be waiting for ever. This change removes
+resetting (memset to zero) of this global variable
+to allow multiple threads to wait at the same time.
+
+Change-Id: I3c2c0992c8b429bcaa1bcf7e328a3fa9fe26d6bc
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 09a997a..25fb0e8 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -3023,14 +3023,15 @@ void QCamera2HardwareInterface::lockAPI()
+ void QCamera2HardwareInterface::waitAPIResult(qcamera_sm_evt_enum_t api_evt)
+ {
+     ALOGV("%s: wait for API result of evt (%d)", __func__, api_evt);
+-    memset(&m_apiResult, 0, sizeof(qcamera_api_result_t));
+-    while (m_apiResult.request_api != api_evt) {
++    do {
+         pthread_cond_wait(&m_cond, &m_lock);
+-    }
++    } while (m_apiResult.request_api != api_evt);
++
+     ALOGV("%s: return (%d) from API result wait for evt (%d)",
+           __func__, m_apiResult.status, api_evt);
+ }
+ 
++
+ /*===========================================================================
+  * FUNCTION   : unlockAPI
+  *
+-- 
+1.8.3.1
+

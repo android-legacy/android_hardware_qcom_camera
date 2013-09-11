@@ -1,0 +1,30 @@
+From 6880076c741213174f769c0c95333cb98c1762c7 Mon Sep 17 00:00:00 2001
+From: Suresh Vankadara <svankada@codeaurora.org>
+Date: Tue, 12 Mar 2013 11:46:26 +0530
+Subject: [PATCH 161/176] Camera: Fix ISO issue
+
+Invoke setExifTag function to get ISO value to
+fix ISO issue.
+
+Change-Id: Ifccc47e7ca26fd733668ff26c7fe48be37da8b8d
+---
+ QCamera/HAL/core/src/QCameraHWI.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI.cpp b/QCamera/HAL/core/src/QCameraHWI.cpp
+index 7ffd38e..8facf2d 100755
+--- a/QCamera/HAL/core/src/QCameraHWI.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI.cpp
+@@ -457,6 +457,9 @@ status_t QCameraHardwareInterface::encodeData(mm_camera_super_buf_t* recvd_frame
+     }
+     main_mem_info = &mSnapshotMemory.mem_info[main_frame->buf_idx];
+ 
++    //Update Exiftag values.
++    setExifTags();
++
+     // send upperlayer callback for raw image (data or notify, not both)
+     app_notify_cb_t *app_cb = (app_notify_cb_t *)malloc(sizeof(app_notify_cb_t));
+     if (app_cb != NULL) {
+-- 
+1.8.3.1
+

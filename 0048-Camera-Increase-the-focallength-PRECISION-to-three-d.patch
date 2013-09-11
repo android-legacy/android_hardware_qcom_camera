@@ -1,0 +1,33 @@
+From 70a52d8c58f5de797f8a3652fe65f973cadb9fbf Mon Sep 17 00:00:00 2001
+From: Rajaram Gudivada <rajaramg@codeaurora.org>
+Date: Fri, 25 Oct 2013 18:35:09 +0530
+Subject: [PATCH 048/176] Camera: Increase the focallength PRECISION to three
+ decimals
+
+Increase the FOCAL_LENGTH_DECIMAL_PRECISION from 100 to 1000.
+This change is required to make CTS testJpegExif to PASS,
+wherein focal length value is checking up to three decimals.
+
+CRs-fixed: 564714
+
+Change-Id: Ic7bab938a61e5101628143294c559c4190de7652
+---
+ QCamera2/HAL/QCameraParameters.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 533c198..a63190a 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -43,7 +43,7 @@ static const char ExifUndefinedPrefix[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 
+ #define GPS_PROCESSING_METHOD_SIZE       101
+ #define EXIF_ASCII_PREFIX_SIZE           8   //(sizeof(ExifAsciiPrefix))
+-#define FOCAL_LENGTH_DECIMAL_PRECISION   100
++#define FOCAL_LENGTH_DECIMAL_PRECISION   1000
+ 
+ class QCameraAdjustFPS
+ {
+-- 
+1.8.3.1
+

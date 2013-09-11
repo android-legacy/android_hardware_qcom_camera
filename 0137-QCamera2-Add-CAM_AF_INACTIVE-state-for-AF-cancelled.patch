@@ -1,0 +1,46 @@
+From 059c465a04c3698dea42895c2492682bb20c2b48 Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Mon, 2 Jun 2014 17:27:58 +0530
+Subject: [PATCH 137/176] QCamera2: Add CAM_AF_INACTIVE state for AF cancelled.
+
+Add CAM_AF_INACTIVE AF state which signifies AF has been
+cancelled. Ignore focus updates when HAL receives focus
+callback with this state.
+
+Change-Id: I96c06822d0fad327dbded8f95ce3cecd12f845e0
+---
+ QCamera2/HAL/QCamera2HWI.cpp      | 3 ++-
+ QCamera2/stack/common/cam_types.h | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 48575b6..393ec02 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -2922,7 +2922,8 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+             break;
+         }
+ 
+-        if (focus_data.focus_state == CAM_AF_SCANNING) {
++        if (focus_data.focus_state == CAM_AF_SCANNING ||
++            focus_data.focus_state == CAM_AF_INACTIVE) {
+             // in the middle of focusing, just ignore it
+             break;
+         }
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 08d1fd8..235a189 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -734,7 +734,8 @@ typedef enum {
+ typedef enum {
+     CAM_AF_SCANNING,
+     CAM_AF_FOCUSED,
+-    CAM_AF_NOT_FOCUSED
++    CAM_AF_NOT_FOCUSED,
++    CAM_AF_INACTIVE
+ } cam_autofocus_state_t;
+ 
+ typedef struct {
+-- 
+1.8.3.1
+

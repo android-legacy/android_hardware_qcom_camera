@@ -1,0 +1,103 @@
+From 9d933fcaef0c69ec3a8840df24f34513136f2f07 Mon Sep 17 00:00:00 2001
+From: Krupal Divvela <kdivvela@codeaurora.org>
+Date: Wed, 25 Sep 2013 19:03:48 +0530
+Subject: [PATCH 052/176] QCamera2: Load adsprpc lib
+
+Load adsprpc lib to support Q6 encoder
+
+Change-Id: Ie55afd88ba4800f11b16189accb19d86b247db09
+---
+ QCamera2/stack/mm-jpeg-interface/Android.mk    |  5 +++++
+ QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h |  6 +++++-
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c | 21 +++++++++++++++++++++
+ 3 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/Android.mk b/QCamera2/stack/mm-jpeg-interface/Android.mk
+index 8b32d79..902cff3 100644
+--- a/QCamera2/stack/mm-jpeg-interface/Android.mk
++++ b/QCamera2/stack/mm-jpeg-interface/Android.mk
+@@ -20,12 +20,17 @@ ifeq ($(strip $(TARGET_USES_ION)),true)
+     LOCAL_CFLAGS += -DUSE_ION
+ endif
+ 
++
+ ifeq ($(call is-board-platform-in-list, msm8974),true)
+     LOCAL_CFLAGS+= -DMM_JPEG_CONCURRENT_SESSIONS_COUNT=2
+ else
+     LOCAL_CFLAGS+= -DMM_JPEG_CONCURRENT_SESSIONS_COUNT=1
+ endif
+ 
++ifeq ($(call is-board-platform-in-list, msm8610),true)
++    LOCAL_CFLAGS+= -DLOAD_ADSP_RPC_LIB
++endif
++
+ LOCAL_SRC_FILES := \
+     src/mm_jpeg_queue.c \
+     src/mm_jpeg_exif.c \
+diff --git a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
+index 737af21..5c18292 100644
+--- a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
++++ b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg.h
+@@ -376,8 +376,12 @@ typedef struct mm_jpeg_obj_t {
+   /* Max pic dimension for work buf calc*/
+   int32_t max_pic_w;
+   int32_t max_pic_h;
+-
+   int work_buf_cnt;
++
++#ifdef LOAD_ADSP_RPC_LIB
++  void *adsprpc_lib_handle;
++#endif
++
+ } mm_jpeg_obj;
+ 
+ /** mm_jpeg_pending_func_t:
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index 484e9b5..bff93ce 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -40,6 +40,11 @@
+ #include "mm_jpeg.h"
+ #include "mm_jpeg_inlines.h"
+ 
++#ifdef LOAD_ADSP_RPC_LIB
++#include <dlfcn.h>
++#include <stdlib.h>
++#endif
++
+ #define ENCODING_MODE_PARALLEL 1
+ 
+ OMX_ERRORTYPE mm_jpeg_ebd(OMX_HANDLETYPE hComponent,
+@@ -1617,6 +1622,15 @@ int32_t mm_jpeg_init(mm_jpeg_obj *my_obj)
+     pthread_mutex_destroy(&my_obj->job_lock);
+   }
+ 
++#ifdef LOAD_ADSP_RPC_LIB
++  my_obj->adsprpc_lib_handle = dlopen("libadsprpc.so", RTLD_NOW);
++  if (NULL == my_obj->adsprpc_lib_handle) {
++    CDBG_ERROR("%s:%d] Cannot load the library", __func__, __LINE__);
++    /* not returning error here bcoz even if this loading fails
++        we can go ahead with SW JPEG enc */
++  }
++#endif
++
+   return rc;
+ }
+ 
+@@ -2282,6 +2296,13 @@ int32_t mm_jpeg_close(mm_jpeg_obj *my_obj, uint32_t client_hdl)
+ 
+   CDBG("%s:%d] ", __func__, __LINE__);
+ 
++#ifdef LOAD_ADSP_RPC_LIB
++  if (NULL != my_obj->adsprpc_lib_handle) {
++    dlclose(my_obj->adsprpc_lib_handle);
++    my_obj->adsprpc_lib_handle = NULL;
++  }
++#endif
++
+   pthread_mutex_unlock(&my_obj->job_lock);
+   CDBG("%s:%d] ", __func__, __LINE__);
+ 
+-- 
+1.8.3.1
+

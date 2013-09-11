@@ -1,0 +1,32 @@
+From 854057659bf634e01c8f003bdb8fa479a1a21c98 Mon Sep 17 00:00:00 2001
+From: Guruprasad Gaonkar <ggaonk@codeaurora.org>
+Date: Thu, 28 Feb 2013 15:25:33 -0800
+Subject: [PATCH 159/176] Changes to fix YV12 padding issue
+
+Proper Padding format is done for YV12 preview format.
+
+Change-Id: Ifa6285941d44486a80f3bb60b02b0e369f05d395
+---
+ QCamera/stack/mm-camera-interface/src/mm_camera_stream.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
+index 9e48f2b..3070bd0 100755
+--- a/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1522,11 +1522,7 @@ int32_t mm_stream_get_offset(mm_stream_t *my_obj)
+ 
+     switch (frame_offset.image_mode) {
+     case MSM_V4L2_EXT_CAPTURE_MODE_PREVIEW:
+-        if (CAMERA_YUV_420_YV12 == frame_offset.format) {
+-            frame_offset.padding_format = CAMERA_PAD_TO_2K;
+-        } else {
+-            frame_offset.padding_format = CAMERA_PAD_TO_WORD;
+-        }
++        frame_offset.padding_format = CAMERA_PAD_TO_WORD;
+         break;
+     case MSM_V4L2_EXT_CAPTURE_MODE_MAIN:
+     case MSM_V4L2_EXT_CAPTURE_MODE_RAW:
+-- 
+1.8.3.1
+

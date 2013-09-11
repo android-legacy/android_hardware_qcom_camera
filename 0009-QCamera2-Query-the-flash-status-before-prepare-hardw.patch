@@ -1,0 +1,86 @@
+From 3380eb2afc9bc2266a73d91848f1bf82ca433f55 Mon Sep 17 00:00:00 2001
+From: Lakshmi Narayana Kalavala <lkalaval@codeaurora.org>
+Date: Fri, 13 Sep 2013 16:51:16 -0700
+Subject: [PATCH 009/176] QCamera2: Query the flash status before prepare
+ hardware
+
+Support the flash status before prepare hardware
+
+Change-Id: Icd239e587eec7b37b330ec3ebbe9032fd761b0b7
+---
+ QCamera2/HAL/QCamera2HWI.cpp          | 13 ++++++++-----
+ QCamera2/HAL/QCamera2HWI.h            |  1 +
+ QCamera2/HAL/QCamera2HWICallbacks.cpp |  1 +
+ QCamera2/stack/common/cam_types.h     |  1 +
+ 4 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ed5a0bb..f9bb920 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -606,10 +606,12 @@ int QCamera2HardwareInterface::take_picture(struct camera_device *device)
+     hw->lockAPI();
+ 
+     /* Prepare snapshot in case LED needs to be flashed */
+-    ret = hw->processAPI(QCAMERA_SM_EVT_PREPARE_SNAPSHOT, NULL);
+-    if (ret == NO_ERROR) {
+-        hw->waitAPIResult(QCAMERA_SM_EVT_PREPARE_SNAPSHOT);
+-        ret = hw->m_apiResult.status;
++    if (hw->mFlashNeeded == 1) {
++        ret = hw->processAPI(QCAMERA_SM_EVT_PREPARE_SNAPSHOT, NULL);
++        if (ret == NO_ERROR) {
++            hw->waitAPIResult(QCAMERA_SM_EVT_PREPARE_SNAPSHOT);
++            ret = hw->m_apiResult.status;
++        }
+     }
+ 
+     /* Regardless what the result value for prepare_snapshot,
+@@ -955,7 +957,8 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+       m_HDRSceneEnabled(false),
+       mLongshotEnabled(false),
+       m_max_pic_width(0),
+-      m_max_pic_height(0)
++      m_max_pic_height(0),
++      mFlashNeeded(false)
+ {
+     mCameraDevice.common.tag = HARDWARE_DEVICE_TAG;
+     mCameraDevice.common.version = HARDWARE_DEVICE_API_VERSION(1, 0);
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index a38ca84..efd6b1f 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -478,6 +478,7 @@ private:
+ 
+     int32_t m_max_pic_width;
+     int32_t m_max_pic_height;
++    uint8_t mFlashNeeded;
+ };
+ 
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 9d29f7b..98a8341 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -1187,6 +1187,7 @@ void QCamera2HardwareInterface::metadata_stream_cb_routine(mm_camera_super_buf_t
+      /* Update 3a info */
+     if(pMetaData->is_ae_params_valid) {
+         pme->mExifParams.ae_params = pMetaData->ae_params;
++        pme->mFlashNeeded = pMetaData->ae_params.flash_needed;
+     }
+ 
+     /*Update Sensor info*/
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 414443c..1900fba 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -780,6 +780,7 @@ typedef struct {
+ typedef struct {
+     float exp_time;
+     int iso_value;
++    uint32_t flash_needed;
+ } cam_ae_params_t;
+ 
+ 
+-- 
+1.8.3.1
+

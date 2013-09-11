@@ -1,0 +1,47 @@
+From c4fa027b496040b306b1f08edc1422d812ec1a6a Mon Sep 17 00:00:00 2001
+From: Suresh Vankadara <svankada@codeaurora.org>
+Date: Fri, 20 Sep 2013 17:56:57 +0530
+Subject: [PATCH 016/176] QCamera2: Pass Pix size to jpeg open
+
+Pass default pix size to jpeg open in camera app.
+
+Change-Id: I42e129f2a57307264ed2ddffaabba78b5d0e3d81
+---
+ QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h | 3 ++-
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c | 6 +++++-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+index d70ed7f..6019fb8 100644
+--- a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
++++ b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+@@ -242,7 +242,8 @@ typedef struct {
+ 
+   uint8_t (*get_num_of_cameras) ();
+   mm_camera_vtbl_t *(*mm_camera_open) (uint8_t camera_idx);
+-  uint32_t (*jpeg_open) (mm_jpeg_ops_t *ops);
++  uint32_t (*jpeg_open) (mm_jpeg_ops_t *ops, mm_dimension picture_size);
++
+ } hal_interface_lib_t;
+ 
+ typedef struct {
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index bc6550a..6207cbf 100755
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -561,7 +561,11 @@ int mm_app_open(mm_camera_app_t *cam_app,
+         goto error_after_getparm_buf_map;
+     }
+     memset(&test_obj->jpeg_ops, 0, sizeof(mm_jpeg_ops_t));
+-    test_obj->jpeg_hdl = cam_app->hal_lib.jpeg_open(&test_obj->jpeg_ops);
++    mm_dimension pic_size;
++    memset(&pic_size, 0, sizeof(mm_dimension));
++    pic_size.w = 4000;
++    pic_size.h = 3000;
++    test_obj->jpeg_hdl = cam_app->hal_lib.jpeg_open(&test_obj->jpeg_ops,pic_size);
+     if (test_obj->jpeg_hdl == 0) {
+         CDBG_ERROR("%s: jpeg lib open err", __func__);
+         rc = -MM_CAMERA_E_GENERAL;
+-- 
+1.8.3.1
+

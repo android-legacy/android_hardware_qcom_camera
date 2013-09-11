@@ -1,0 +1,39 @@
+From 33da38caf000a80caa2ca42fdf125555aaa36cfa Mon Sep 17 00:00:00 2001
+From: Santhosh Kumar Thimmanna Bhattar <sthim@codeaurora.org>
+Date: Wed, 10 Dec 2014 18:41:16 +0530
+Subject: [PATCH 146/176] QCamera2: set the color effects values to default
+ value
+
+- CTS test case testEffectModes is failing due to color effects
+  values array is null for front camera as there are no color
+  effects availble for front camera
+
+- Fix is to set the color effect values to default when there
+  are no supported color effects available.
+
+Change-Id: Ic99e2221c72cffdbaebcfaa57d9dc361a10c02be
+---
+ QCamera2/HAL/QCameraParameters.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index cf02fee..d423469 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -3688,7 +3688,12 @@ int32_t QCameraParameters::initDefaultParameters()
+             m_pCapability->supported_effects_cnt,
+             EFFECT_MODES_MAP,
+             sizeof(EFFECT_MODES_MAP) / sizeof(QCameraMap));
+-    set(KEY_SUPPORTED_EFFECTS, effectValues);
++    if (m_pCapability->supported_effects_cnt > 0) {
++        set(KEY_SUPPORTED_EFFECTS, effectValues);
++    } else {
++        ALOGE("Color effects are not available");
++        set(KEY_SUPPORTED_EFFECTS, EFFECT_NONE);
++    }
+     setEffect(EFFECT_NONE);
+ 
+     // Set WhiteBalance
+-- 
+1.8.3.1
+

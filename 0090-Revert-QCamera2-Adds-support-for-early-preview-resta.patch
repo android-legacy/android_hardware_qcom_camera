@@ -1,0 +1,419 @@
+From 98c2b18b258983328dc9b25bd4e2237248000629 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 13 Jan 2014 23:48:48 -0800
+Subject: [PATCH 090/176] Revert "QCamera2: Adds support for early preview
+ restart"
+
+This reverts commit 3646387f4a57785275e8a96217478d769ce734e6.
+
+Change-Id: I9d9058a4c093035a2e2f972c9b6c8c91b8d61a58
+---
+ QCamera2/HAL/QCamera2HWI.cpp         |  70 +++++-------------------
+ QCamera2/HAL/QCamera2HWI.h           |   5 +-
+ QCamera2/HAL/QCameraChannel.cpp      |  23 --------
+ QCamera2/HAL/QCameraChannel.h        |   1 -
+ QCamera2/HAL/QCameraStateMachine.cpp |  21 +------
+ QCamera2/HAL/QCameraStream.cpp       | 103 +++++------------------------------
+ QCamera2/HAL/QCameraStream.h         |   3 -
+ 7 files changed, 32 insertions(+), 194 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ca7465d..9d9ca45 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1562,24 +1562,16 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+         break;
+     case CAM_STREAM_TYPE_POSTVIEW:
+         {
+-            if (isPreviewRestartEnabled()) {
+-                mem = new QCameraStreamMemory(mGetMemory, bCachedMem);
+-            } else {
+-                cam_dimension_t dim;
+-                QCameraGrallocMemory *grallocMemory =
+-                    new QCameraGrallocMemory(mGetMemory);
+-
+-                mParameters.getStreamDimension(stream_type, dim);
+-                if (grallocMemory) {
+-                    grallocMemory->setWindowInfo(mPreviewWindow,
+-                        dim.width,
+-                        dim.height,
+-                        stride,
+-                        scanline,
+-                        mParameters.getPreviewHalPixelFormat());
+-                }
+-                mem = grallocMemory;
+-            }
++            cam_dimension_t dim;
++            QCameraGrallocMemory *grallocMemory =
++                new QCameraGrallocMemory(mGetMemory);
++
++            mParameters.getStreamDimension(stream_type, dim);
++            if (grallocMemory)
++                grallocMemory->setWindowInfo(mPreviewWindow, dim.width,
++                    dim.height, stride, scanline,
++                    mParameters.getPreviewHalPixelFormat());
++            mem = grallocMemory;
+         }
+         break;
+     case CAM_STREAM_TYPE_SNAPSHOT:
+@@ -2307,24 +2299,18 @@ end:
+  *
+  * DESCRIPTION: Stops capture channel
+  *
+- * PARAMETERS :
+- *   @destroy : Set to true to stop and delete camera channel.
+- *              Set to false to only stop capture channel.
++ * PARAMETERS : none
+  *
+  * RETURN     : int32_t type of status
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int QCamera2HardwareInterface::stopCaptureChannel(bool destroy)
++int QCamera2HardwareInterface::stopCaptureChannel()
+ {
+     if (mParameters.isJpegPictureFormat() ||
+         mParameters.isNV16PictureFormat() ||
+         mParameters.isNV21PictureFormat()) {
+         stopChannel(QCAMERA_CH_TYPE_CAPTURE);
+-        if (destroy) {
+-            // Destroy camera channel but dont release context
+-            delChannel(QCAMERA_CH_TYPE_CAPTURE, false);
+-        }
+     }
+ 
+     return NO_ERROR;
+@@ -4110,22 +4096,16 @@ int32_t QCamera2HardwareInterface::addChannel(qcamera_ch_type_enum_t ch_type)
+  *
+  * PARAMETERS :
+  *   @ch_type : channel type
+- *   @destroy : delete context as well
+  *
+  * RETURN     : int32_t type of status
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int32_t QCamera2HardwareInterface::delChannel(qcamera_ch_type_enum_t ch_type,
+-                                              bool destroy)
++int32_t QCamera2HardwareInterface::delChannel(qcamera_ch_type_enum_t ch_type)
+ {
+     if (m_channels[ch_type] != NULL) {
+-        if (destroy) {
+-            delete m_channels[ch_type];
+-            m_channels[ch_type] = NULL;
+-        } else {
+-            m_channels[ch_type]->deleteChannel();
+-        }
++        delete m_channels[ch_type];
++        m_channels[ch_type] = NULL;
+     }
+ 
+     return NO_ERROR;
+@@ -4848,26 +4828,6 @@ bool QCamera2HardwareInterface::isCACEnabled()
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : isPreviewRestartEnabled
+- *
+- * DESCRIPTION: Check whether preview should be restarted automatically
+- *              during image capture.
+- *
+- * PARAMETERS : none
+- *
+- * RETURN     : true: needed
+- *              false: no need
+- *==========================================================================*/
+-bool QCamera2HardwareInterface::isPreviewRestartEnabled()
+-{
+-    char prop[PROPERTY_VALUE_MAX];
+-    memset(prop, 0, sizeof(prop));
+-    property_get("persist.camera.feature.restart", prop, "0");
+-    int earlyRestart = atoi(prop);
+-    return earlyRestart == 1;
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : needReprocess
+  *
+  * DESCRIPTION: if reprocess is needed
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index 3e9a858..c3b4703 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -275,7 +275,7 @@ private:
+     int autoFocus();
+     int cancelAutoFocus();
+     int takePicture();
+-    int stopCaptureChannel(bool destroy);
++    int stopCaptureChannel();
+     int cancelPicture();
+     int takeLiveSnapshot();
+     int cancelLiveSnapshot();
+@@ -316,7 +316,6 @@ private:
+ 
+     bool needDebugFps();
+     bool isCACEnabled();
+-    bool isPreviewRestartEnabled();
+     bool needReprocess();
+     bool needRotationReprocess();
+     bool needScaleReprocess();
+@@ -355,7 +354,7 @@ private:
+     int32_t addChannel(qcamera_ch_type_enum_t ch_type);
+     int32_t startChannel(qcamera_ch_type_enum_t ch_type);
+     int32_t stopChannel(qcamera_ch_type_enum_t ch_type);
+-    int32_t delChannel(qcamera_ch_type_enum_t ch_type, bool destroy = true);
++    int32_t delChannel(qcamera_ch_type_enum_t ch_type);
+     int32_t addPreviewChannel();
+     int32_t addSnapshotChannel();
+     int32_t addVideoChannel();
+diff --git a/QCamera2/HAL/QCameraChannel.cpp b/QCamera2/HAL/QCameraChannel.cpp
+index 0f47b6f..dc0e654 100644
+--- a/QCamera2/HAL/QCameraChannel.cpp
++++ b/QCamera2/HAL/QCameraChannel.cpp
+@@ -109,29 +109,6 @@ QCameraChannel::~QCameraChannel()
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : deleteChannel
+- *
+- * DESCRIPTION: deletes a camera channel
+- *
+- * PARAMETERS : none
+- *
+- * RETURN     : none
+- *==========================================================================*/
+-void QCameraChannel::deleteChannel()
+-{
+-    if (m_bIsActive) {
+-        stop();
+-    }
+-
+-    for (int i = 0; i < m_numStreams; i++) {
+-        if (mStreams[i] != NULL) {
+-            mStreams[i]->deleteStream();
+-        }
+-    }
+-    m_camOps->delete_channel(m_camHandle, m_handle);
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : init
+  *
+  * DESCRIPTION: initialization of channel
+diff --git a/QCamera2/HAL/QCameraChannel.h b/QCamera2/HAL/QCameraChannel.h
+index a162ee4..db24233 100644
+--- a/QCamera2/HAL/QCameraChannel.h
++++ b/QCamera2/HAL/QCameraChannel.h
+@@ -69,7 +69,6 @@ public:
+     QCameraStream *getStreamByIndex(uint8_t index);
+     QCameraStream *getStreamByServerID(uint32_t serverID);
+     int32_t UpdateStreamBasedParameters(QCameraParameters &param);
+-    void deleteChannel();
+ 
+ protected:
+     uint32_t m_camHandle;
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index f90e24e..ed68400 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -1687,17 +1687,7 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+         break;
+     case QCAMERA_SM_EVT_STOP_CAPTURE_CHANNEL:
+         {
+-            bool restartPreview = m_parent->isPreviewRestartEnabled();
+-            rc = m_parent->stopCaptureChannel(restartPreview);
+-
+-            if (restartPreview && (NO_ERROR == rc)) {
+-                rc = m_parent->preparePreview();
+-                if (NO_ERROR == rc) {
+-                    m_parent->m_bPreviewStarted = true;
+-                    rc = m_parent->startPreview();
+-                }
+-            }
+-
++            rc = m_parent->stopCaptureChannel();
+             result.status = rc;
+             result.request_api = evt;
+             result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+@@ -1707,14 +1697,7 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+     case QCAMERA_SM_EVT_SNAPSHOT_DONE:
+         {
+             rc = m_parent->cancelPicture();
+-
+-            bool restartPreview = m_parent->isPreviewRestartEnabled();
+-            if (restartPreview) {
+-                m_state = QCAMERA_SM_STATE_PREVIEWING;
+-            } else {
+-                m_state = QCAMERA_SM_STATE_PREVIEW_STOPPED;
+-            }
+-
++            m_state = QCAMERA_SM_STATE_PREVIEW_STOPPED;
+             result.status = rc;
+             result.request_api = evt;
+             result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+diff --git a/QCamera2/HAL/QCameraStream.cpp b/QCamera2/HAL/QCameraStream.cpp
+index 00c7353..593d942 100644
+--- a/QCamera2/HAL/QCameraStream.cpp
++++ b/QCamera2/HAL/QCameraStream.cpp
+@@ -277,92 +277,24 @@ QCameraStream::~QCameraStream()
+     pthread_mutex_destroy(&mCropLock);
+     pthread_mutex_destroy(&mParameterLock);
+ 
+-    if (mDefferedAllocation) {
+-        mStreamBufsAcquired = false;
++    if (mDefferedAllocation)
+         releaseBuffs();
+-    }
+-
+-    unmapStreamInfoBuf();
+-    releaseStreamInfoBuf();
+-
+-    // delete stream
+-    if (mHandle > 0) {
+-        mCamOps->delete_stream(mCamHandle, mChannelHandle, mHandle);
+-        mHandle = 0;
+-    }
+-}
+-
+-/*===========================================================================
+- * FUNCTION   : unmapStreamInfoBuf
+- *
+- * DESCRIPTION: Unmap stream info buffer
+- *
+- * PARAMETERS :
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::unmapStreamInfoBuf()
+-{
+-    int rc = NO_ERROR;
+ 
+     if (mStreamInfoBuf != NULL) {
+-        rc = mCamOps->unmap_stream_buf(mCamHandle,
+-            mChannelHandle,
+-            mHandle,
+-            CAM_MAPPING_BUF_TYPE_STREAM_INFO,
+-            0,
+-            -1);
+-
++        int rc = mCamOps->unmap_stream_buf(mCamHandle,
++                    mChannelHandle, mHandle, CAM_MAPPING_BUF_TYPE_STREAM_INFO, 0, -1);
+         if (rc < 0) {
+-            ALOGE("Failed to unmap stream info buffer");
++            ALOGE("Failed to map stream info buffer");
+         }
+-    }
+-
+-    return rc;
+-}
+-
+-/*===========================================================================
+- * FUNCTION   : releaseStreamInfoBuf
+- *
+- * DESCRIPTION: Release stream info buffer
+- *
+- * PARAMETERS :
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraStream::releaseStreamInfoBuf()
+-{
+-    int rc = NO_ERROR;
+-
+-    if (mStreamInfoBuf != NULL) {
+         mStreamInfoBuf->deallocate();
+         delete mStreamInfoBuf;
+         mStreamInfoBuf = NULL;
+     }
+ 
+-    return rc;
+-}
+-
+-/*===========================================================================
+- * FUNCTION   : deleteStream
+- *
+- * DESCRIPTION: Deletes a camera stream
+- *
+- * PARAMETERS : None
+- *
+- * RETURN     : None
+- *==========================================================================*/
+-void QCameraStream::deleteStream()
+-{
++    // delete stream
+     if (mHandle > 0) {
+-        acquireStreamBufs();
+-        releaseBuffs();
+-        unmapStreamInfoBuf();
+         mCamOps->delete_stream(mCamHandle, mChannelHandle, mHandle);
++        mHandle = 0;
+     }
+ }
+ 
+@@ -571,11 +503,6 @@ int32_t QCameraStream::processZoomDone(preview_stream_ops_t *previewWindow,
+ {
+     int32_t rc = 0;
+ 
+-    if (!m_bActive) {
+-        ALOGV("%s : Stream not active", __func__);
+-        return NO_ERROR;
+-    }
+-
+     // get stream param for crop info
+     for (int i = 0; i < crop_info.num_of_streams; i++) {
+         if (crop_info.crop_info[i].stream_id == mStreamInfo->stream_svr_id) {
+@@ -1031,19 +958,15 @@ int32_t QCameraStream::releaseBuffs()
+ {
+     int rc = NO_ERROR;
+ 
+-    if (NULL != mBufDefs) {
+-        for (int i = 0; i < mNumBufs; i++) {
+-            rc = unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
+-            if (rc < 0) {
+-                ALOGE("%s: map_stream_buf failed: %d", __func__, rc);
+-            }
++    for (int i = 0; i < mNumBufs; i++) {
++        rc = unmapBuf(CAM_MAPPING_BUF_TYPE_STREAM_BUF, i, -1);
++        if (rc < 0) {
++            ALOGE("%s: map_stream_buf failed: %d", __func__, rc);
+         }
+-
+-        mBufDefs = NULL; // mBufDefs just keep a ptr to the buffer
+-                         // mm-camera-interface own the buffer,
+-                         // so no need to free
+-        memset(&mFrameLenOffset, 0, sizeof(mFrameLenOffset));
+     }
++    mBufDefs = NULL; // mBufDefs just keep a ptr to the buffer
++                     // mm-camera-interface own the buffer, so no need to free
++    memset(&mFrameLenOffset, 0, sizeof(mFrameLenOffset));
+     if ( !mStreamBufsAcquired ) {
+         mStreamBufs->deallocate();
+         delete mStreamBufs;
+diff --git a/QCamera2/HAL/QCameraStream.h b/QCamera2/HAL/QCameraStream.h
+index dbe31e2..c558891 100644
+--- a/QCamera2/HAL/QCameraStream.h
++++ b/QCamera2/HAL/QCameraStream.h
+@@ -98,7 +98,6 @@ public:
+     static void releaseFrameData(void *data, void *user_data);
+     int32_t configStream();
+     bool isDeffered() const { return mDefferedAllocation; }
+-    void deleteStream();
+ 
+     int mDumpFrame;
+     int mDumpMetaFrame;
+@@ -171,8 +170,6 @@ private:
+     int32_t invalidateBuf(int index);
+     int32_t cleanInvalidateBuf(int index);
+     int32_t calcOffset(cam_stream_info_t *streamInfo);
+-    int32_t unmapStreamInfoBuf();
+-    int32_t releaseStreamInfoBuf();
+     bool mDefferedAllocation;
+ 
+ };
+-- 
+1.8.3.1
+

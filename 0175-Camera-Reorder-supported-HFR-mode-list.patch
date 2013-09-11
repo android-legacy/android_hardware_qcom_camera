@@ -1,0 +1,34 @@
+From 67ca48ff7ffcd0c5e5d040ced5a8498c61ac3c05 Mon Sep 17 00:00:00 2001
+From: Suman Mukherjee <sumam@codeaurora.org>
+Date: Wed, 14 Jan 2015 13:50:49 +0530
+Subject: [PATCH 175/176] Camera: Reorder supported HFR mode list
+
+At present supported HFR mode list is off,60,90,120
+Set it to 60,90,120,off as coming in B family.
+This'll help in snapdragon application crash while selecting
+HFR120 option.
+
+Change-Id: I8b0050462d8beb6b06bb42f37e5663de9bead914
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index b244687..0253038 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -290,10 +290,10 @@ static const str_map touchafaec[] = {
+ };
+ 
+ static const str_map hfr[] = {
+-    { QCameraParameters::VIDEO_HFR_OFF, CAMERA_HFR_MODE_OFF },
+     { QCameraParameters::VIDEO_HFR_2X, CAMERA_HFR_MODE_60FPS },
+     { QCameraParameters::VIDEO_HFR_3X, CAMERA_HFR_MODE_90FPS },
+     { QCameraParameters::VIDEO_HFR_4X, CAMERA_HFR_MODE_120FPS },
++    { QCameraParameters::VIDEO_HFR_OFF, CAMERA_HFR_MODE_OFF }
+ };
+ static const int HFR_VALUES_COUNT = (sizeof(hfr)/sizeof(str_map));
+ 
+-- 
+1.8.3.1
+

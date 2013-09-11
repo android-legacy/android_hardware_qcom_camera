@@ -1,0 +1,28 @@
+From 37dc1afc0a1e71b687854816dcc5eef72cd1bcd4 Mon Sep 17 00:00:00 2001
+From: Sreesudhan Ramakrish Ramkumar <srramku@codeaurora.org>
+Date: Thu, 5 Dec 2013 12:33:29 -0800
+Subject: [PATCH 112/176] camera: Reset queued_buffer_count for every recording
+
+Reset queued_buffer_count before recording start.
+
+CRs-Fixed: 573515
+Change-Id: I97d256710f7aa029c31442cc3bd274b8b92eebac
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 0139dd8..07d993a 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1552,6 +1552,7 @@ int32_t mm_stream_reg_buf(mm_stream_t * my_obj)
+     }
+ 
+     pthread_mutex_lock(&my_obj->buf_lock);
++    my_obj->queued_buffer_count = 0;
+     for(i = 0; i < my_obj->buf_num; i++){
+         /* check if need to qbuf initially */
+         if (my_obj->buf_status[i].initial_reg_flag) {
+-- 
+1.8.3.1
+

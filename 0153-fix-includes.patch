@@ -1,0 +1,25 @@
+From e7bf18a3216714ebfd67d3db9ea56a3f0bc5dce6 Mon Sep 17 00:00:00 2001
+From: erikcas <erikcas1972@gmail.com>
+Date: Sat, 4 Apr 2015 00:21:26 +0200
+Subject: [PATCH 153/176] fix includes
+
+---
+ QCamera2/HAL/Android.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 5d1d698..16daa8e 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -43,7 +43,7 @@ else
+     LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
+ endif
+ 
+-LOCAL_C_INCLUDES := \
++LOCAL_C_INCLUDES += \
+         $(LOCAL_PATH)/../../mm-image-codec/qexif \
+         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
+         $(LOCAL_PATH)/../util \
+-- 
+1.8.3.1
+

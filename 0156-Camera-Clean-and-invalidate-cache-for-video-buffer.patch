@@ -1,0 +1,29 @@
+From 3a7fdb9d9aaf03433dc1960ea270421c25f7f034 Mon Sep 17 00:00:00 2001
+From: Alok Kediya <kediya@codeaurora.org>
+Date: Mon, 7 Oct 2013 13:56:48 +0530
+Subject: [PATCH 156/176] Camera: Clean and invalidate cache for video buffer
+
+This helps prevent artifacts for low resolution
+frames when scene/camera is moving.
+
+Change-Id: I8900e1061adb5e4c9cf3552e8556fa22aca33479
+---
+ QCamera/HAL/core/src/QCameraHWI_Record.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Record.cpp b/QCamera/HAL/core/src/QCameraHWI_Record.cpp
+index 73d26d1..c8e82c2 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Record.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Record.cpp
+@@ -144,7 +144,7 @@ status_t QCameraStream_record::processRecordFrame(mm_camera_super_buf_t *frame)
+ 
+     mHalCamCtrl->cache_ops(&mHalCamCtrl->mRecordingMemory.mem_info[video_buf_idx],
+                            (void *)mHalCamCtrl->mRecordingMemory.camera_memory[video_buf_idx]->data,
+-                           ION_IOC_CLEAN_CACHES);
++                           ION_IOC_CLEAN_INV_CACHES);
+ 
+     if (mHalCamCtrl->mStoreMetaDataInFrame) {
+         if((rcb != NULL) && (mHalCamCtrl->mMsgEnabled & CAMERA_MSG_VIDEO_FRAME)) {
+-- 
+1.8.3.1
+

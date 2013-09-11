@@ -1,0 +1,50 @@
+From 2d1bedef4216ec687b1f47372949bb88ad0e94fd Mon Sep 17 00:00:00 2001
+From: Santhosh Kumar H E <skhara@codeaurora.org>
+Date: Tue, 16 Dec 2014 14:38:34 +0530
+Subject: [PATCH 147/176] Capture single image by default in HDR use case.
+
+Depending on HDR 1x frame setting, the decision is made to
+capture single HDR image or both HDR and normal image. By deault
+set this parameter to false so it will capture single HDR image.
+Which is as expected for camera applications which doesnot control
+this parameter.
+
+Change-Id: I4d5b1687bbcd2f71d5f79492b4ce5e54a7167991
+---
+ QCamera2/HAL/QCameraParameters.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index cf02fee..d5d5212 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -584,7 +584,7 @@ QCameraParameters::QCameraParameters()
+       m_bAVTimerEnabled(false),
+       m_bDISEnabled(false),
+       m_AdjustFPS(NULL),
+-      m_bHDR1xFrameEnabled(true),
++      m_bHDR1xFrameEnabled(false),
+       m_HDRSceneEnabled(false),
+       m_bHDRThumbnailProcessNeeded(false),
+       m_bHDR1xExtraBufferNeeded(true),
+@@ -654,7 +654,7 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_bLongShotEnabled(false),
+     m_bAVTimerEnabled(false),
+     m_AdjustFPS(NULL),
+-    m_bHDR1xFrameEnabled(true),
++    m_bHDR1xFrameEnabled(false),
+     m_HDRSceneEnabled(false),
+     m_bHDRThumbnailProcessNeeded(false),
+     m_bHDR1xExtraBufferNeeded(true),
+@@ -3825,7 +3825,7 @@ int32_t QCameraParameters::initDefaultParameters()
+     set(KEY_QC_SUPPORTED_SCENE_DETECT, onOffValues);
+     setSceneDetect(VALUE_OFF);
+     m_bHDREnabled = false;
+-    m_bHDR1xFrameEnabled = true;
++    m_bHDR1xFrameEnabled = false;
+ 
+     m_bHDRThumbnailProcessNeeded = false;
+     m_bHDR1xExtraBufferNeeded = true;
+-- 
+1.8.3.1
+

@@ -1,0 +1,37 @@
+From 72d768ff89fb9e5991aec985e440ab9d97c70c51 Mon Sep 17 00:00:00 2001
+From: Georgi Hristv <ghristov@codeaurora.org>
+Date: Wed, 2 Oct 2013 17:47:59 +0300
+Subject: [PATCH 032/176] QCamera2: State Machine - AF during capture
+
+if receive AF start in preview stopped state (usualy during
+capture post process) do not return error - it cuases exeption
+throw in java application. Just do nothing
+
+Change-Id: I02ad7e762b19da71250c9c7be306e3074217a029
+---
+ QCamera2/HAL/QCameraStateMachine.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index b3d2f91..a715594 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -490,7 +490,6 @@ int32_t QCameraStateMachine::procEvtPreviewStoppedState(qcamera_sm_evt_enum_t ev
+     case QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME:
+     case QCAMERA_SM_EVT_PREPARE_SNAPSHOT:
+     case QCAMERA_SM_EVT_TAKE_PICTURE:
+-    case QCAMERA_SM_EVT_START_AUTO_FOCUS:
+         {
+             ALOGE("%s: cannot handle evt(%d) in state(%d)", __func__, evt, m_state);
+             rc = INVALID_OPERATION;
+@@ -500,6 +499,7 @@ int32_t QCameraStateMachine::procEvtPreviewStoppedState(qcamera_sm_evt_enum_t ev
+             m_parent->signalAPIResult(&result);
+         }
+         break;
++    case QCAMERA_SM_EVT_START_AUTO_FOCUS:
+     case QCAMERA_SM_EVT_CANCEL_PICTURE:
+         {
+             // no op needed here
+-- 
+1.8.3.1
+

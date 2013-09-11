@@ -1,0 +1,29 @@
+From 9863dcd8d53cd3da1810556492d512a01650099e Mon Sep 17 00:00:00 2001
+From: Ivan Evlogiev <ivanevlogiev@codeaurora.org>
+Date: Mon, 28 Oct 2013 18:34:31 -0700
+Subject: [PATCH 047/176] QCamera2: Ignore HDR setting, if burst mode is set
+
+- HDR burst consumes too much memory. So burst mode and HDR
+are mutually exclusive. HDR is disabled, if burst mode is enabled
+
+Change-Id: I3f098721d956b9b7f81b35f311a599673595a791
+---
+ QCamera2/HAL/QCameraParameters.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 1cc65c8..8a52470 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -7615,7 +7615,7 @@ cam_dimension_t *QCameraReprocScaleParam::getTotalSizeTbl()
+  *==========================================================================*/
+ bool QCameraParameters::isHDREnabled()
+ {
+-    return (m_bHDREnabled || m_HDRSceneEnabled);
++    return ((m_nBurstNum == 1) && (m_bHDREnabled || m_HDRSceneEnabled));
+ }
+ 
+ /*===========================================================================
+-- 
+1.8.3.1
+

@@ -1,0 +1,214 @@
+From 2fc598495cc21d0d1f2b130ee9c47e05d1356bd4 Mon Sep 17 00:00:00 2001
+From: erikcas <erikcas1972@gmail.com>
+Date: Fri, 27 Mar 2015 13:08:07 +0100
+Subject: [PATCH 149/176] omni bringup
+
+---
+ QCamera/HAL/core/Android.mk                   | 17 ++++--
+ QCamera/HAL2/core/Android.mk                  | 19 ++++--
+ QCamera2/Android.mk                           | 85 ++++++++++++++++++++++++++-
+ QCamera2/HAL/test/Android.mk                  |  6 ++
+ QCamera2/stack/mm-camera-interface/Android.mk |  6 +-
+ 5 files changed, 121 insertions(+), 12 deletions(-)
+
+diff --git a/QCamera/HAL/core/Android.mk b/QCamera/HAL/core/Android.mk
+index f3160a8..8bfb254 100755
+--- a/QCamera/HAL/core/Android.mk
++++ b/QCamera/HAL/core/Android.mk
+@@ -98,9 +98,18 @@ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/media
+ LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ 
+-LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc \
+-        hardware/qcom/display/libgenlock \
+-        hardware/qcom/media/libstagefrighthw
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc \
++                        hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgenlock
++else
++    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc \
++                        hardware/qcom/display/libgenlock
++endif
++ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/libstagefrighthw
++else
++    LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
++endif
+ 
+ # if debug service layer and up , use stub camera!
+ LOCAL_C_INCLUDES += \
+@@ -117,7 +126,7 @@ LOCAL_SHARED_LIBRARIES += libgenlock libbinder libmmjpeg_interface libhardware
+ LOCAL_CFLAGS += -include bionic/libc/kernel/common/linux/socket.h
+ 
+ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+-LOCAL_MODULE:= camera.$(TARGET_BOARD_PLATFORM)
++LOCAL_MODULE:= camera.$(SOMC_PLATFORM)
+ LOCAL_MODULE_TAGS := optional
+ include $(BUILD_SHARED_LIBRARY)
+ 
+diff --git a/QCamera/HAL2/core/Android.mk b/QCamera/HAL2/core/Android.mk
+index 6491691..ca89c5c 100644
+--- a/QCamera/HAL2/core/Android.mk
++++ b/QCamera/HAL2/core/Android.mk
+@@ -53,10 +53,19 @@ LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../../stack/mm-jpeg-interface/inc\
+         $(TARGET_OUT_INTERMEDIATES)/include/mm-camera-interface_badger \
+ 
+-LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc \
+-        hardware/qcom/display/libgenlock \
+-        hardware/qcom/media/libstagefrighthw \
+-	system/media/camera/include
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc \
++                        hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgenlock
++else
++    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc \
++                        hardware/qcom/display/libgenlock
++endif
++ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/libstagefrighthw
++else
++    LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
++endif
++LOCAL_C_INCLUDES += system/media/camera/include
+ 
+ # if debug service layer and up , use stub camera!
+ LOCAL_C_INCLUDES += \
+@@ -73,7 +82,7 @@ LOCAL_SHARED_LIBRARIES+= libgenlock libbinder libcamera_metadata
+ LOCAL_CFLAGS += -include bionic/libc/include/sys/socket.h
+ 
+ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+-LOCAL_MODULE:= camera.$(TARGET_BOARD_PLATFORM)
++LOCAL_MODULE:= camera.$(SOMC_PLATFORM)
+ LOCAL_MODULE_TAGS := optional
+ include $(BUILD_SHARED_LIBRARY)
+ 
+diff --git a/QCamera2/Android.mk b/QCamera2/Android.mk
+index c36c538..2432564 100644
+--- a/QCamera2/Android.mk
++++ b/QCamera2/Android.mk
+@@ -1,3 +1,84 @@
+-ifeq ($(TARGET_ARCH),arm)
+-  include $(call all-subdir-makefiles)
++ifneq (,$(filter $(TARGET_ARCH), arm arm64))
++
++LOCAL_PATH:= $(call my-dir)
++
++include $(CLEAR_VARS)
++
++LOCAL_SRC_FILES := \
++        util/QCameraCmdThread.cpp \
++        util/QCameraQueue.cpp \
++        QCamera2Hal.cpp \
++        QCamera2Factory.cpp
++
++#HAL 3.0 source
++LOCAL_SRC_FILES += \
++        HAL3/QCamera3HWI.cpp \
++        HAL3/QCamera3Mem.cpp \
++        HAL3/QCamera3Stream.cpp \
++        HAL3/QCamera3Channel.cpp \
++        HAL3/QCamera3VendorTags.cpp \
++        HAL3/QCamera3PostProc.cpp
++
++#HAL 1.0 source
++LOCAL_SRC_FILES += \
++        HAL/QCamera2HWI.cpp \
++        HAL/QCameraMem.cpp \
++        HAL/QCameraStateMachine.cpp \
++        HAL/QCameraChannel.cpp \
++        HAL/QCameraStream.cpp \
++        HAL/QCameraPostProc.cpp \
++        HAL/QCamera2HWICallbacks.cpp \
++        HAL/QCameraParameters.cpp \
++        HAL/QCameraThermalAdapter.cpp
++
++LOCAL_CFLAGS := -Wall -Wextra -Werror
++LOCAL_CFLAGS += -DHAS_MULTIMEDIA_HINTS
++
++#HAL 1.0 Flags
++LOCAL_CFLAGS += -DDEFAULT_DENOISE_MODE_ON -DHAL3
++
++LOCAL_C_INCLUDES := \
++        $(LOCAL_PATH)/stack/common \
++        frameworks/native/include/media/hardware \
++        frameworks/native/include/media/openmax \
++        system/media/camera/include \
++        $(LOCAL_PATH)/../mm-image-codec/qexif \
++        $(LOCAL_PATH)/../mm-image-codec/qomx_core \
++        $(LOCAL_PATH)/util \
++
++ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/libstagefrighthw
++else
++    LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
++endif
++
++#HAL 1.0 Include paths
++LOCAL_C_INCLUDES += \
++        frameworks/native/include/media/hardware \
++        hardware/qcom/camera/QCamera2/HAL
++
++LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
++
++#LOCAL_STATIC_LIBRARIES := libqcamera2_util
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES        += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
++    LOCAL_C_INCLUDES        += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libqdutils
++else
++    LOCAL_C_INCLUDES        += hardware/qcom/display/libgralloc
++    LOCAL_C_INCLUDES        += hardware/qcom/display/libqdutils
++endif
++LOCAL_SHARED_LIBRARIES := libcamera_client liblog libhardware libutils libcutils libdl
++LOCAL_SHARED_LIBRARIES += libmmcamera_interface libmmjpeg_interface libui libcamera_metadata
++LOCAL_SHARED_LIBRARIES += libqdMetaData
++
++LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
++#LOCAL_MODULE := camera.$(TARGET_BOARD_PLATFORM)
++LOCAL_MODULE := camera.$(SOMC_PLATFORM)
++LOCAL_MODULE_TAGS := optional
++
++LOCAL_32_BIT_ONLY := $(BOARD_QTI_CAMERA_32BIT_ONLY)
++include $(BUILD_SHARED_LIBRARY)
++
++include $(call first-makefiles-under,$(LOCAL_PATH))
++
+ endif
+diff --git a/QCamera2/HAL/test/Android.mk b/QCamera2/HAL/test/Android.mk
+index d045303..bacb478 100644
+--- a/QCamera2/HAL/test/Android.mk
++++ b/QCamera2/HAL/test/Android.mk
+@@ -30,7 +30,13 @@ LOCAL_C_INCLUDES += \
+     frameworks/base/include/surfaceflinger \
+     frameworks/base/include/camera \
+     frameworks/base/include/media \
++    $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+ 
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES        += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
++else
++    LOCAL_C_INCLUDES        += hardware/qcom/display/libgralloc
++endif
+ LOCAL_MODULE:= camera_test
+ LOCAL_MODULE_TAGS:= tests
+ 
+diff --git a/QCamera2/stack/mm-camera-interface/Android.mk b/QCamera2/stack/mm-camera-interface/Android.mk
+index 464e756..856a532 100755
+--- a/QCamera2/stack/mm-camera-interface/Android.mk
++++ b/QCamera2/stack/mm-camera-interface/Android.mk
+@@ -38,7 +38,11 @@ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/media
+ LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ 
+-LOCAL_C_INCLUDES += hardware/qcom/media/mm-core/inc
++ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/mm-core/inc
++else
++    LOCAL_C_INCLUDES += hardware/qcom/media/mm-core/inc
++endif
+ 
+ ifeq ($(call is-platform-sdk-version-at-least,20),true)
+ LOCAL_C_INCLUDES += system/media/camera/include
+-- 
+1.8.3.1
+

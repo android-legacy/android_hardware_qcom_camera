@@ -1,0 +1,36 @@
+From 30fcc91fda766bf331da3b9cf1cc293560596feb Mon Sep 17 00:00:00 2001
+From: Kiran Kumar H N <hurlisal@codeaurora.org>
+Date: Thu, 1 Aug 2013 16:15:18 +0530
+Subject: [PATCH 172/176] Camera: Correct error code if sensor does not support
+ WNR.
+
+If a particular sensor does not support Wavelet Denoise feature,
+(for eg: YUV sensor), return the error code as NO_ERROR to make
+sure other functionality is fine. Otherwise the app will stop
+because of the error code returned.
+
+Change-Id: I25ba190b3b46bd6ef66ee54384f4d6c0c17569b9
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index 7fdb4f7..8c4bd47 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -2493,10 +2493,9 @@ status_t QCameraHardwareInterface::setWaveletDenoise(const QCameraParameters& pa
+     uint8_t supported;
+     mCameraHandle->ops->is_parm_supported(mCameraHandle->camera_handle,
+                                           MM_CAMERA_PARM_WAVELET_DENOISE,&supported,&supported);
+-    if( !supported ) {
++    if(!supported) {
+         ALOGE("Wavelet Denoise is not supported for this sensor");
+-        /* TO DO */
+-//        return NO_ERROR;
++        return NO_ERROR;
+     }
+     const char *str = params.get(QCameraParameters::KEY_QC_DENOISE);
+     if (str != NULL) {
+-- 
+1.8.3.1
+

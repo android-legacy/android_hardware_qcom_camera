@@ -1,0 +1,39 @@
+From dcbadc730f470bdefba8952449b0fb2842ff2605 Mon Sep 17 00:00:00 2001
+From: Jignesh Mehta <jigneshm@codeaurora.org>
+Date: Thu, 20 Mar 2014 11:36:46 -0700
+Subject: [PATCH 136/176] QCamera2: Resume CAF after snapshot
+
+CAF needs cancel auto focus to resume after snapshot.
+Focus should be locked till take picture is done.
+
+In Non-zsl case if focus mode is CAF then calling
+cancel auto focus to resume CAF.
+
+Change-Id: I4b589285972f6234380eadd7353aa4c56052b888
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 9f7d8f5..48575b6 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1911,6 +1911,15 @@ int QCamera2HardwareInterface::startPreview()
+         rc = startChannel(QCAMERA_CH_TYPE_ZSL);
+     } else {
+         rc = startChannel(QCAMERA_CH_TYPE_PREVIEW);
++        /*
++          CAF needs cancel auto focus to resume after snapshot.
++          Focus should be locked till take picture is done.
++          In Non-zsl case if focus mode is CAF then calling cancel auto focus
++          to resume CAF.
++        */
++          cam_focus_mode_type focusMode = mParameters.getFocusMode();
++          if (focusMode == CAM_FOCUS_MODE_CONTINOUS_PICTURE)
++              mCameraHandle->ops->cancel_auto_focus(mCameraHandle->camera_handle);
+     }
+     ALOGD("%s: X", __func__);
+     return rc;
+-- 
+1.8.3.1
+

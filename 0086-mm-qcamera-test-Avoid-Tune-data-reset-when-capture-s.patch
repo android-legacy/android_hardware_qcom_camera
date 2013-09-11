@@ -1,0 +1,77 @@
+From 78e14d45ab43a9ddda5e5c78f4d9b5595b75221c Mon Sep 17 00:00:00 2001
+From: Lokesh Kumar Aakulu <lkumar@codeaurora.org>
+Date: Tue, 31 Dec 2013 17:43:52 +0530
+Subject: [PATCH 086/176] mm-qcamera-test: Avoid Tune data reset when capture
+ snapshot
+
+when issue Snapshot capture command back end will load exisisting
+chromatix header from shared library. Due to this tuned data is
+reset. To avoid this scenario we call reload chromatix after
+restart preview after snapshot done.
+
+CRs-Fixed: 594220
+Change-Id: Iacd10ff4c7e2476ab069e53a7ceb8608d15125ac
+---
+ QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h |  4 +++-
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c | 15 ++++++++++++++-
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+index cbd40c7..129304d 100644
+--- a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
++++ b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012, 2014 The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -244,6 +244,8 @@ typedef struct {
+     mm_camera_queue_t pp_frames;
+     mm_camera_stream_t *reproc_stream;
+     cam_metadata_info_t *metadata;
++    int8_t is_chromatix_reload;
++    tune_chromatix_t tune_data;
+ } mm_camera_test_obj_t;
+ 
+ typedef struct {
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index c6140f1..66ab5ef 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -2373,6 +2373,16 @@ int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
+                 goto EXIT;
+             }
+ 
++            if (handle->test_obj.is_chromatix_reload == TRUE) {
++                /*Re-load Chromatix is taken care to make sure Tuned data
++                  is not lost when capture Snapshot                    */
++                rc = setReloadChromatix(&handle->test_obj,
++                        (tune_chromatix_t *)&(handle->test_obj.tune_data));
++                if (rc != MM_CAMERA_OK) {
++                    CDBG_ERROR("%s: setReloadChromatix failed\n", __func__);
++                    goto EXIT;
++                }
++            }
+             break;
+ 
+         case MM_CAMERA_LIB_SET_FOCUS_MODE: {
+@@ -2465,6 +2475,9 @@ int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
+              CDBG_ERROR("%s: setReloadChromatix failed\n", __func__);
+              goto EXIT;
+            }
++           handle->test_obj.is_chromatix_reload = TRUE;
++           memcpy((void *)&(handle->test_obj.tune_data),
++                   (void *)in_data, sizeof(tune_chromatix_t));
+            break;
+        }
+ 
+-- 
+1.8.3.1
+

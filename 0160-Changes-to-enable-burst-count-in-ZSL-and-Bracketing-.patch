@@ -1,0 +1,30 @@
+From 8a6b6626b61be26b8770e0d0f59bc9da56f1463e Mon Sep 17 00:00:00 2001
+From: Guruprasad Gaonkar <ggaonk@codeaurora.org>
+Date: Wed, 6 Mar 2013 12:32:06 -0800
+Subject: [PATCH 160/176] Changes to enable burst count in ZSL and Bracketing
+ Mode.
+
+Burst snapshot is not supported in Non ZSL mode. Changes to reset
+burst count in Non ZSL mode.
+
+Change-Id: I8220b7eeb119e1ba36612f6e7b6b68afeb540e16
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index 498397b..4deb4a7 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -3538,7 +3538,7 @@ int QCameraHardwareInterface::getNumOfSnapshots(const QCameraParameters& params)
+     memset(prop, 0, sizeof(prop));
+     property_get("persist.camera.snapshot.number", prop, "0");
+     ALOGI("%s: prop enable/disable = %d", __func__, atoi(prop));
+-    if (atoi(prop)) {
++    if (atoi(prop) && ((myMode & CAMERA_ZSL_MODE) || (mHdrMode == EXP_BRACKETING_MODE))) {
+         ALOGI("%s: Reading maximum no of snapshots = %d"
+              "from properties", __func__, atoi(prop));
+         return atoi(prop);
+-- 
+1.8.3.1
+

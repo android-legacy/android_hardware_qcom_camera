@@ -1,0 +1,29 @@
+From b48c8d8ba35ef31548a0f7522a30846d86a30dbf Mon Sep 17 00:00:00 2001
+From: satyavaraprasad yerramsetti <satyav@codeaurora.org>
+Date: Thu, 19 Sep 2013 08:32:55 +0530
+Subject: [PATCH 012/176] Revert "QCamera2: fix the size displayed error of
+ livesnapshot exif"
+
+This reverts commit ffb8161760150fada3c3ab3efa47a35087fc7164.
+---
+ QCamera2/HAL/QCameraParameters.cpp | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index f258ecd..33915c1 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -1218,10 +1218,6 @@ int32_t QCameraParameters::setLiveSnapshotSize(const QCameraParameters& params)
+     ALOGI("%s: live snapshot size %d x %d", __func__,
+           m_LiveSnapshotSize.width, m_LiveSnapshotSize.height);
+ 
+-    if (m_bRecordingHint) {
+-        CameraParameters::setPictureSize(m_LiveSnapshotSize.width, m_LiveSnapshotSize.height);
+-    }
+-
+     return NO_ERROR;
+ }
+ 
+-- 
+1.8.3.1
+

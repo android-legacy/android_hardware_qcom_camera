@@ -1,0 +1,33 @@
+From ec1952a7b1bd6b015a41dc8038f306129a131565 Mon Sep 17 00:00:00 2001
+From: "Arun Kumar K.R" <akumarkr@codeaurora.org>
+Date: Thu, 19 Sep 2013 17:01:10 -0700
+Subject: [PATCH 028/176] camera: remove target dependency to include display
+ headers
+
+Display headers are exported to common location irrespective of
+the target. Hence include that path
+
+Change-Id: Iad085b6998d81eaa58a21d8e3f2fe4c6b6b3e1ed
+
+Conflicts:
+
+	QCamera2/HAL/Android.mk
+---
+ QCamera2/HAL/Android.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index e6b183e..27c7b23 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -31,6 +31,7 @@ endif
+ LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../stack/common \
+         frameworks/native/include/media/openmax \
++        hardware/qcom/display/libgralloc \
+         hardware/qcom/media/libstagefrighthw \
+         $(LOCAL_PATH)/../../mm-image-codec/qexif \
+         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
+-- 
+1.8.3.1
+

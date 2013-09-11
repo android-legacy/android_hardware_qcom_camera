@@ -1,0 +1,77 @@
+From 8fadadb5663190fba52c4683b2d363e1268f7625 Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Mon, 24 Feb 2014 18:47:15 +0530
+Subject: [PATCH 116/176] Camera : Restart preview when DIS is
+ enabled/disabled.
+
+Whenever DIS is enabled/disabled, preview restart is
+required because of topology change in backend for
+certain IS types like EIS2.0. But for now, restart
+preview for all IS types.
+
+Also, set is_type to 0 in stream info whenever DIS
+is disabled, otherwise read from system property.
+
+Change-Id: I3e5e439f9909ffa76f6dc9fe3bcfe30e0deb548a
+---
+ QCamera2/HAL/QCamera2HWI.cpp       | 13 ++++++++++---
+ QCamera2/HAL/QCameraParameters.cpp |  6 +++++-
+ QCamera2/stack/common/cam_types.h  |  1 +
+ 3 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ca75743..77061d8 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1710,9 +1710,16 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+         streamInfo->useAVTimer = mParameters.isAVTimerEnabled();
+     case CAM_STREAM_TYPE_PREVIEW:
+         if (mParameters.getRecordingHintValue()) {
+-            char value[PROPERTY_VALUE_MAX];
+-            property_get("persist.camera.is_type", value, "0");
+-            streamInfo->is_type = static_cast<cam_is_type_t>(atoi(value));
++            const char* dis_param = mParameters.get(QCameraParameters::KEY_QC_DIS);
++            bool disEnabled = (dis_param != NULL)
++                    && !strcmp(dis_param,QCameraParameters::VALUE_ENABLE);
++            if(disEnabled) {
++                char value[PROPERTY_VALUE_MAX];
++                property_get("persist.camera.is_type", value, "0");
++                streamInfo->is_type = static_cast<cam_is_type_t>(atoi(value));
++            } else {
++                streamInfo->is_type = IS_TYPE_NONE;
++            }
+         }
+         break;
+     default:
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 449920b..2d6942f 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -4929,7 +4929,11 @@ int32_t QCameraParameters::setDISValue(const char *disStr)
+                                    sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
+                                    disStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGV("%s: Setting DIS value %s", __func__, disStr);
++            //For some IS types (like EIS 2.0), when DIS value is changed, we need to restart
++            //preview because of topology change in backend. But, for now, restart preview
++            //for all IS types.
++            m_bNeedRestart = true;
++            ALOGD("%s: Setting DIS value %s", __func__, disStr);
+             updateParamEntry(KEY_QC_DIS, disStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_DIS_ENABLE,
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index feb082f..19c2410 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -530,6 +530,7 @@ typedef enum {
+ } cam_streaming_mode_t;
+ 
+ typedef enum {
++    IS_TYPE_NONE,
+     IS_TYPE_DIS,
+     IS_TYPE_GA_DIS,
+     IS_TYPE_EIS_1_0,
+-- 
+1.8.3.1
+

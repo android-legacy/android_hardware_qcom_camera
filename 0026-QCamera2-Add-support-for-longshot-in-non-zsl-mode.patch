@@ -1,0 +1,283 @@
+From a43000b1c29eae3dddcc97fc460cfe3f780020a0 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Fri, 27 Sep 2013 14:27:21 -0700
+Subject: [PATCH 026/176] QCamera2: Add support for longshot in non-zsl mode
+
+- Longshot mode is currently supported only during
+  zsl mode. This change will enable longhsot for
+  the non-zsl case as well.
+
+Change-Id: I8ce5aae1353949abf59a0022c11246e59bee5ce0
+CRs-Fixed: 550676
+---
+ QCamera2/HAL/QCamera2HWI.cpp          | 76 ++++++++++++++++++++++++++---------
+ QCamera2/HAL/QCamera2HWICallbacks.cpp |  4 +-
+ QCamera2/HAL/QCameraPostProc.cpp      |  3 +-
+ QCamera2/HAL/QCameraStateMachine.cpp  | 33 +++++++++++++--
+ 4 files changed, 90 insertions(+), 26 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 09a997a..cbb5758 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1351,7 +1351,7 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+         break;
+     case CAM_STREAM_TYPE_SNAPSHOT:
+         {
+-            if (mParameters.isZSLMode()) {
++            if (mParameters.isZSLMode() || mLongshotEnabled) {
+                 bufferCnt = zslQBuffers + minCircularBufNum;
+             } else {
+                 bufferCnt = minCaptureBuffers*CAMERA_PPROC_OUT_BUFFER_MULTIPLIER +
+@@ -1574,7 +1574,8 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+     switch (stream_type) {
+     case CAM_STREAM_TYPE_SNAPSHOT:
+     case CAM_STREAM_TYPE_RAW:
+-        if (mParameters.isZSLMode() && mParameters.getRecordingHintValue() != true) {
++        if ((mParameters.isZSLMode() && mParameters.getRecordingHintValue() != true) ||
++                 mLongshotEnabled) {
+             streamInfo->streaming_mode = CAM_STREAMING_MODE_CONTINUOUS;
+         } else {
+             streamInfo->streaming_mode = CAM_STREAMING_MODE_BURST;
+@@ -1584,10 +1585,14 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+         }
+         break;
+     case CAM_STREAM_TYPE_POSTVIEW:
+-        streamInfo->streaming_mode = CAM_STREAMING_MODE_BURST;
+-        streamInfo->num_of_burst = mParameters.getNumOfSnapshots()
+-            + mParameters.getNumOfExtraHDRInBufsIfNeeded()
+-            - mParameters.getNumOfExtraHDROutBufsIfNeeded();
++        if (mLongshotEnabled) {
++            streamInfo->streaming_mode = CAM_STREAMING_MODE_CONTINUOUS;
++        } else {
++            streamInfo->streaming_mode = CAM_STREAMING_MODE_BURST;
++            streamInfo->num_of_burst = mParameters.getNumOfSnapshots()
++                + mParameters.getNumOfExtraHDRInBufsIfNeeded()
++                - mParameters.getNumOfExtraHDROutBufsIfNeeded();
++        }
+         break;
+     default:
+         break;
+@@ -2134,6 +2139,15 @@ int QCamera2HardwareInterface::takePicture()
+                     delChannel(QCAMERA_CH_TYPE_CAPTURE);
+                     return rc;
+                 }
++
++                if ( mLongshotEnabled ) {
++                    rc = longShot();
++                    if (NO_ERROR != rc) {
++                        m_postprocessor.stop();
++                        delChannel(QCAMERA_CH_TYPE_CAPTURE);
++                        return rc;
++                    }
++                }
+             } else {
+                 ALOGE("%s: cannot add capture channel", __func__);
+                 return rc;
+@@ -2182,13 +2196,18 @@ int32_t QCamera2HardwareInterface::longShot()
+ {
+     int32_t rc = NO_ERROR;
+     uint8_t numSnapshots = mParameters.getNumOfSnapshots();
++    QCameraPicChannel *pChannel = NULL;
+ 
+-    QCameraPicChannel *pZSLChannel =
+-            (QCameraPicChannel *)m_channels[QCAMERA_CH_TYPE_ZSL];
+-    if (NULL != pZSLChannel) {
+-        rc = pZSLChannel->takePicture(numSnapshots);
++    if (mParameters.isZSLMode()) {
++        pChannel = (QCameraPicChannel *)m_channels[QCAMERA_CH_TYPE_ZSL];
+     } else {
+-        ALOGE(" %s : ZSL channel not initialized!", __func__);
++        pChannel = (QCameraPicChannel *)m_channels[QCAMERA_CH_TYPE_CAPTURE];
++    }
++
++    if (NULL != pChannel) {
++        rc = pChannel->takePicture(numSnapshots);
++    } else {
++        ALOGE(" %s : Capture channel not initialized!", __func__);
+         rc = NO_INIT;
+         goto end;
+     }
+@@ -3528,7 +3547,7 @@ int32_t QCamera2HardwareInterface::addZSLChannel()
+ int32_t QCamera2HardwareInterface::addCaptureChannel()
+ {
+     int32_t rc = NO_ERROR;
+-    QCameraChannel *pChannel = NULL;
++    QCameraPicChannel *pChannel = NULL;
+     char value[PROPERTY_VALUE_MAX];
+     bool raw_yuv = false;
+ 
+@@ -3537,7 +3556,7 @@ int32_t QCamera2HardwareInterface::addCaptureChannel()
+         m_channels[QCAMERA_CH_TYPE_CAPTURE] = NULL;
+     }
+ 
+-    pChannel = new QCameraChannel(mCameraHandle->camera_handle,
++    pChannel = new QCameraPicChannel(mCameraHandle->camera_handle,
+                                   mCameraHandle->ops);
+     if (NULL == pChannel) {
+         ALOGE("%s: no mem for capture channel", __func__);
+@@ -3547,7 +3566,13 @@ int32_t QCamera2HardwareInterface::addCaptureChannel()
+     // Capture channel, only need snapshot and postview streams start together
+     mm_camera_channel_attr_t attr;
+     memset(&attr, 0, sizeof(mm_camera_channel_attr_t));
+-    attr.notify_mode = MM_CAMERA_SUPER_BUF_NOTIFY_CONTINUOUS;
++    if ( mLongshotEnabled ) {
++        attr.notify_mode = MM_CAMERA_SUPER_BUF_NOTIFY_BURST;
++        attr.look_back = mParameters.getZSLBackLookCount();
++        attr.water_mark = mParameters.getZSLQueueDepth();
++    } else {
++        attr.notify_mode = MM_CAMERA_SUPER_BUF_NOTIFY_CONTINUOUS;
++    }
+     attr.max_unmatched_frames = mParameters.getMaxUnmatchedFramesInQueue();
+ 
+     rc = pChannel->init(&attr,
+@@ -3568,13 +3593,24 @@ int32_t QCamera2HardwareInterface::addCaptureChannel()
+         return rc;
+     }
+ 
+-    rc = addStreamToChannel(pChannel, CAM_STREAM_TYPE_POSTVIEW,
+-                            NULL, this);
++    if (!mLongshotEnabled) {
++        rc = addStreamToChannel(pChannel, CAM_STREAM_TYPE_POSTVIEW,
++                                NULL, this);
+ 
+-    if (rc != NO_ERROR) {
+-        ALOGE("%s: add postview stream failed, ret = %d", __func__, rc);
+-        delete pChannel;
+-        return rc;
++        if (rc != NO_ERROR) {
++            ALOGE("%s: add postview stream failed, ret = %d", __func__, rc);
++            delete pChannel;
++            return rc;
++        }
++    } else {
++        rc = addStreamToChannel(pChannel, CAM_STREAM_TYPE_PREVIEW,
++                                preview_stream_cb_routine, this);
++
++      if (rc != NO_ERROR) {
++          ALOGE("%s: add preview stream failed, ret = %d", __func__, rc);
++          delete pChannel;
++          return rc;
++      }
+     }
+ 
+     rc = addStreamToChannel(pChannel, CAM_STREAM_TYPE_SNAPSHOT,
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 5e380c8..1675d74 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -1057,7 +1057,9 @@ void QCamera2HardwareInterface::metadata_stream_cb_routine(mm_camera_super_buf_t
+     mm_camera_buf_def_t *frame = super_frame->bufs[0];
+     cam_metadata_info_t *pMetaData = (cam_metadata_info_t *)frame->buffer;
+ 
+-    if(pme->m_stateMachine.isNonZSLCaptureRunning()&& pMetaData->is_meta_valid == 1) {
++    if(pme->m_stateMachine.isNonZSLCaptureRunning()&&
++       (pMetaData->is_meta_valid == 1) &&
++       !pme->mLongshotEnabled) {
+        //Make shutter call back in non ZSL mode once raw frame is received from VFE.
+        pme->playShutter();
+     }
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 42bc9e7..b89495b 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -505,7 +505,8 @@ int32_t QCameraPostProcessor::processData(mm_camera_super_buf_t *frame)
+         processRawData(frame);
+     } else {
+         //play shutter sound
+-        if(!m_parent->m_stateMachine.isNonZSLCaptureRunning())
++        if(!m_parent->m_stateMachine.isNonZSLCaptureRunning() &&
++           !m_parent->mLongshotEnabled)
+            m_parent->playShutter();
+ 
+         ALOGD("%s: no need offline reprocess, sending to jpeg encoding", __func__);
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index b3d2f91..3f41d1a 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -1108,7 +1108,7 @@ int32_t QCameraStateMachine::procEvtPreviewingState(qcamera_sm_evt_enum_t evt,
+     case QCAMERA_SM_EVT_TAKE_PICTURE:
+        {
+            if ( m_parent->mParameters.getRecordingHintValue() == false) {
+-               if (m_parent->isZSLMode()) {
++               if (m_parent->isZSLMode() || m_parent->isLongshotEnabled()) {
+                    m_state = QCAMERA_SM_STATE_PREVIEW_PIC_TAKING;
+                    rc = m_parent->takePicture();
+                    if (rc != NO_ERROR) {
+@@ -1569,6 +1569,10 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+             rc = m_parent->sendCommand(cmd_payload->cmd,
+                                        cmd_payload->arg1,
+                                        cmd_payload->arg2);
++            if ( CAMERA_CMD_LONGSHOT_OFF == cmd_payload->cmd ) {
++                // move state to previewing state
++                m_state = QCAMERA_SM_STATE_PREVIEWING;
++            }
+             result.status = rc;
+             result.request_api = evt;
+             result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+@@ -1600,8 +1604,22 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+             m_parent->signalAPIResult(&result);
+         }
+         break;
+-    case QCAMERA_SM_EVT_PREPARE_SNAPSHOT:
+     case QCAMERA_SM_EVT_TAKE_PICTURE:
++        {
++           if ( m_parent->isLongshotEnabled() ) {
++               rc = m_parent->longShot();
++            } else {
++                ALOGE("%s: cannot handle evt(%d) in state(%d)", __func__, evt, m_state);
++                rc = INVALID_OPERATION;
++            }
++
++            result.status = rc;
++            result.request_api = evt;
++            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++            m_parent->signalAPIResult(&result);
++        }
++        break;
++    case QCAMERA_SM_EVT_PREPARE_SNAPSHOT:
+     case QCAMERA_SM_EVT_START_RECORDING:
+     case QCAMERA_SM_EVT_STOP_RECORDING:
+     case QCAMERA_SM_EVT_RELEASE_RECORIDNG_FRAME:
+@@ -2576,7 +2594,7 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+         break;
+     case QCAMERA_SM_EVT_CANCEL_PICTURE:
+         {
+-            if (m_parent->isZSLMode()) {
++            if (m_parent->isZSLMode() || m_parent->isLongshotEnabled()) {
+                 rc = m_parent->cancelPicture();
+             } else {
+                 rc = m_parent->cancelLiveSnapshot();
+@@ -2594,6 +2612,9 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+                 // cancel picture first
+                 rc = m_parent->cancelPicture();
+                 m_parent->stopChannel(QCAMERA_CH_TYPE_ZSL);
++            } else if (m_parent->isLongshotEnabled()) {
++                // just cancel picture
++                rc = m_parent->cancelPicture();
+             } else {
+                 rc = m_parent->cancelLiveSnapshot();
+                 m_parent->stopChannel(QCAMERA_CH_TYPE_PREVIEW);
+@@ -2613,6 +2634,10 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+                 ALOGE("%s: cannot handle evt(%d) in state(%d) in ZSL mode",
+                       __func__, evt, m_state);
+                 rc = INVALID_OPERATION;
++            } else if (m_parent->isLongshotEnabled()) {
++                ALOGE("%s: cannot handle evt(%d) in state(%d) in Longshot mode",
++                      __func__, evt, m_state);
++                rc = INVALID_OPERATION;
+             } else {
+                 rc = m_parent->startRecording();
+                 if (rc == NO_ERROR) {
+@@ -2724,7 +2749,7 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+         break;
+     case QCAMERA_SM_EVT_SNAPSHOT_DONE:
+         {
+-            if (m_parent->isZSLMode()) {
++            if (m_parent->isZSLMode() || m_parent->isLongshotEnabled()) {
+                 rc = m_parent->cancelPicture();
+             } else {
+                 rc = m_parent->cancelLiveSnapshot();
+-- 
+1.8.3.1
+

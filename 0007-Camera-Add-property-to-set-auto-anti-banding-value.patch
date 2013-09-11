@@ -1,0 +1,64 @@
+From f31fadb66977a7d4d84895429d13246c72410d11 Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Thu, 12 Sep 2013 14:33:51 +0530
+Subject: [PATCH 007/176] Camera: Add property to set auto anti banding value.
+
+This enables user to set the
+auto anti banding value at run time
+
+Change-Id: Id793d9794df835004e423c78cd3ace0d8389c14c
+CRs-Fixed: 519272
+---
+ QCamera2/HAL/QCameraParameters.cpp | 16 ++++++++++++++++
+ QCamera2/HAL/QCameraParameters.h   |  1 +
+ 2 files changed, 17 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 5749e06..f258ecd 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -4625,6 +4625,19 @@ int32_t QCameraParameters::setWhiteBalance(const char *wbStr)
+     ALOGE("Invalid WhiteBalance value: %s", (wbStr == NULL) ? "NULL" : wbStr);
+     return BAD_VALUE;
+ }
++int QCameraParameters::getAutoFlickerMode()
++{
++    /* Enable Advanced Auto Antibanding where we can set
++       any of the following option
++       ie. CAM_ANTIBANDING_MODE_AUTO
++           CAM_ANTIBANDING_MODE_AUTO_50HZ
++           CAM_ANTIBANDING_MODE_AUTO_60HZ
++      Currently setting it to default    */
++    char prop[PROPERTY_VALUE_MAX];
++    memset(prop, 0, sizeof(prop));
++    property_get("persist.camera.set.afd", prop, "3");
++    return atoi(prop);
++}
+ 
+ /*===========================================================================
+  * FUNCTION   : setAntibanding
+@@ -4647,6 +4660,9 @@ int32_t QCameraParameters::setAntibanding(const char *antiBandingStr)
+         if (value != NAME_NOT_FOUND) {
+             ALOGD("%s: Setting AntiBanding value %s", __func__, antiBandingStr);
+             updateParamEntry(KEY_ANTIBANDING, antiBandingStr);
++            if(value == CAM_ANTIBANDING_MODE_AUTO) {
++               value = getAutoFlickerMode();
++            }
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_ANTIBANDING,
+                                           sizeof(value),
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 3bda408..3785308 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -508,6 +508,7 @@ public:
+ 
+     const char *getASDStateString(cam_auto_scene_t scene);
+     bool isHDRThumbnailProcessNeeded() { return m_bHDRThumbnailProcessNeeded; };
++	int getAutoFlickerMode();
+ 
+ private:
+     int32_t setPreviewSize(const QCameraParameters& );
+-- 
+1.8.3.1
+

@@ -1,0 +1,25 @@
+From ab62eede4beef841576e5044479678479fca15ba Mon Sep 17 00:00:00 2001
+From: erikcas <erikcas1972@gmail.com>
+Date: Sat, 4 Apr 2015 00:28:26 +0200
+Subject: [PATCH 154/176] add -Wno-missing-field-initializers
+
+---
+ QCamera2/HAL/Android.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 16daa8e..62d343b 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -17,7 +17,7 @@ LOCAL_SRC_FILES := \
+         QCameraThermalAdapter.cpp \
+         wrapper/QualcommCamera.cpp
+ 
+-LOCAL_CFLAGS = -Wall -Werror
++LOCAL_CFLAGS = -Wall -Wno-missing-field-initializers -Werror
+ #Debug logs are enabled
+ #LOCAL_CFLAGS += -DDISABLE_DEBUG_LOG
+ 
+-- 
+1.8.3.1
+

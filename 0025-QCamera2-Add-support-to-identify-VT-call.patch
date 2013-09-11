@@ -1,0 +1,287 @@
+From 2172e0f534a797dc8b539d05864185488e96b500 Mon Sep 17 00:00:00 2001
+From: Abhishek Kondaveeti <akondave@codeaurora.org>
+Date: Sat, 20 Jul 2013 09:35:29 +0530
+Subject: [PATCH 025/176] QCamera2: Add support to identify VT call
+
+Adding an extra interface to identify the use case
+whether VT call or not and thereby enable the use
+of AVTimer TimeStamp Values
+
+Change-Id: I39480f7d64363028336b36f8baf3acfdad6db0e6
+---
+ QCamera2/HAL/QCamera2HWI.cpp                       |  3 +
+ QCamera2/HAL/QCamera2HWICallbacks.cpp              |  7 +-
+ QCamera2/HAL/QCameraParameters.cpp                 | 80 +++++++++++++++++++++-
+ QCamera2/HAL/QCameraParameters.h                   |  5 ++
+ QCamera2/stack/common/cam_intf.h                   |  3 +
+ QCamera2/stack/common/cam_types.h                  |  1 +
+ .../mm-camera-interface/src/mm_camera_stream.c     |  5 +-
+ 7 files changed, 101 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 09a997a..fc362b5 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1589,6 +1589,9 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+             + mParameters.getNumOfExtraHDRInBufsIfNeeded()
+             - mParameters.getNumOfExtraHDROutBufsIfNeeded();
+         break;
++    case CAM_STREAM_TYPE_VIDEO:
++        streamInfo->useAVTimer = mParameters.isAVTimerEnabled();
++        break;
+     default:
+         break;
+     }
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 5e380c8..c152ae6 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -784,7 +784,12 @@ void QCamera2HardwareInterface::video_stream_cb_routine(mm_camera_super_buf_t *s
+           frame->stream_id,
+           frame->ts.tv_sec,
+           frame->ts.tv_nsec);
+-    nsecs_t timeStamp = nsecs_t(frame->ts.tv_sec) * 1000000000LL + frame->ts.tv_nsec;
++    nsecs_t timeStamp;
++    if(pme->mParameters.isAVTimerEnabled() == true) {
++        timeStamp = (((nsecs_t)frame->ts.tv_sec << 32) | frame->ts.tv_nsec) * 1000;
++    } else {
++        timeStamp = nsecs_t(frame->ts.tv_sec) * 1000000000LL + frame->ts.tv_nsec;
++    }
+     ALOGE("Send Video frame to services/encoder TimeStamp : %lld", timeStamp);
+     QCameraMemory *videoMemObj = (QCameraMemory *)frame->mem_info;
+     camera_memory_t *video_mem = NULL;
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index fd73671..1db8979 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -102,6 +102,7 @@ const char QCameraParameters::KEY_QC_VIDEO_FLIP[] = "video-flip";
+ const char QCameraParameters::KEY_QC_SNAPSHOT_PICTURE_FLIP[] = "snapshot-picture-flip";
+ const char QCameraParameters::KEY_QC_SUPPORTED_FLIP_MODES[] = "flip-mode-values";
+ const char QCameraParameters::KEY_QC_VIDEO_HDR[] = "video-hdr";
++const char QCameraParameters::KEY_QC_VT_ENABLE[] = "avtimer";
+ const char QCameraParameters::KEY_QC_SUPPORTED_VIDEO_HDR_MODES[] = "video-hdr-values";
+ const char QCameraParameters::KEY_QC_AUTO_HDR_ENABLE [] = "auto-hdr-enable";
+ const char QCameraParameters::KEY_QC_SNAPSHOT_BURST_NUM[] = "snapshot-burst-num";
+@@ -575,6 +576,7 @@ QCameraParameters::QCameraParameters()
+       m_bSnapshotFlipChanged(false),
+       m_bFixedFrameRateSet(false),
+       m_bHDREnabled(false),
++      m_bAVTimerEnabled(false),
+       m_AdjustFPS(NULL),
+       m_bHDR1xFrameEnabled(true),
+       m_HDRSceneEnabled(false),
+@@ -642,6 +644,7 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_bSnapshotFlipChanged(false),
+     m_bFixedFrameRateSet(false),
+     m_bHDREnabled(false),
++    m_bAVTimerEnabled(false),
+     m_AdjustFPS(NULL),
+     m_bHDR1xFrameEnabled(true),
+     m_HDRSceneEnabled(false),
+@@ -1943,6 +1946,31 @@ int32_t QCameraParameters::setVideoHDR(const QCameraParameters& params)
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : setVtEnable
++ *
++ * DESCRIPTION: set vt Time Stamp enable from user setting
++ *
++ * PARAMETERS :
++ *   @params  : user setting parameters
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int32_t QCameraParameters::setVtEnable(const QCameraParameters& params)
++{
++    const char *str = params.get(KEY_QC_VT_ENABLE);
++    const char *prev_str = get(KEY_QC_VT_ENABLE);
++    if (str != NULL) {
++        if (prev_str == NULL ||
++            strcmp(str, prev_str) != 0) {
++            return setVtEnable(str);
++        }
++    }
++    return NO_ERROR;
++}
++
++/*===========================================================================
+  * FUNCTION   : setFaceRecognition
+  *
+  * DESCRIPTION: set face recognition mode from user setting
+@@ -3091,6 +3119,7 @@ int32_t QCameraParameters::updateParameters(QCameraParameters& params,
+     if ((rc = setFaceRecognition(params)))              final_rc = rc;
+     if ((rc = setFlip(params)))                         final_rc = rc;
+     if ((rc = setVideoHDR(params)))                     final_rc = rc;
++    if ((rc = setVtEnable(params)))                     final_rc = rc;
+     if ((rc = setBurstNum(params)))                     final_rc = rc;
+     if ((rc = setSnapshotFDReq(params)))                final_rc = rc;
+     if ((rc = setTintlessValue(params)))                final_rc = rc;
+@@ -3585,7 +3614,8 @@ int32_t QCameraParameters::initDefaultParameters()
+         set(KEY_QC_SUPPORTED_VIDEO_HDR_MODES, onOffValues);
+         set(KEY_QC_VIDEO_HDR, VALUE_OFF);
+     }
+-
++    // Set VT TimeStamp
++    set(KEY_QC_VT_ENABLE, VALUE_DISABLE);
+     //Set Touch AF/AEC
+     String8 touchValues = createValuesStringFromMap(
+        TOUCH_AF_AEC_MODES_MAP, sizeof(TOUCH_AF_AEC_MODES_MAP) / sizeof(QCameraMap));
+@@ -4210,6 +4240,40 @@ int32_t QCameraParameters::setVideoHDR(const char *videoHDR)
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : setVtEnable
++ *
++ * DESCRIPTION: set vt Enable value
++ *
++ * PARAMETERS :
++ *   @videoHDR  : svtEnable value string
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int32_t QCameraParameters::setVtEnable(const char *vtEnable)
++{
++    if (vtEnable != NULL) {
++        int32_t value = lookupAttr(ENABLE_DISABLE_MODES_MAP,
++                                   sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
++                                   vtEnable);
++        if (value != NAME_NOT_FOUND) {
++            ALOGD("%s: Setting Vt Enable %s", __func__, vtEnable);
++            m_bAVTimerEnabled = true;
++            updateParamEntry(KEY_QC_VT_ENABLE, vtEnable);
++            return AddSetParmEntryToBatch(m_pParamBuf,
++                                          CAM_INTF_PARM_VT,
++                                          sizeof(value),
++                                          &value);
++        }
++    }
++    ALOGE("Invalid Vt Enable value: %s",
++          (vtEnable == NULL) ? "NULL" : vtEnable);
++    m_bAVTimerEnabled = false;
++    return BAD_VALUE;
++}
++
++/*===========================================================================
+  * FUNCTION   : setFaceRecognition
+  *
+  * DESCRIPTION: set face recognition value
+@@ -7330,5 +7394,19 @@ bool QCameraParameters::isHDREnabled()
+     return (m_bHDREnabled || m_HDRSceneEnabled);
+ }
+ 
++/*===========================================================================
++ * FUNCTION   : isAVTimerEnabled
++ *
++ * DESCRIPTION: if AVTimer is enabled
++ *
++ * PARAMETERS : none
++ *
++ * RETURN     : true: needed
++ *              false: no need
++ *==========================================================================*/
++bool QCameraParameters::isAVTimerEnabled()
++{
++    return m_bAVTimerEnabled;
++}
+ 
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index fb415d3..9cb5102 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -357,6 +357,7 @@ public:
+     static const char KEY_QC_SUPPORTED_HISTOGRAM_MODES[] ;
+     static const char KEY_QC_HDR_NEED_1X[];
+     static const char KEY_QC_VIDEO_HDR[];
++    static const char KEY_QC_VT_ENABLE[];
+     static const char KEY_QC_SUPPORTED_VIDEO_HDR_MODES[];
+ 
+     // Values for SKIN TONE ENHANCEMENT
+@@ -483,6 +484,7 @@ public:
+     bool isAutoHDREnabled();
+     int32_t restoreAEBracket();
+     int32_t updateRAW(cam_dimension_t max_dim);
++    bool isAVTimerEnabled();
+ 
+     cam_focus_mode_type getFocusMode() const {return mFocusMode;};
+     int32_t setNumOfSnapshot();
+@@ -538,6 +540,7 @@ private:
+     int32_t setSkinToneEnhancement(const QCameraParameters& );
+     int32_t setSceneDetect(const QCameraParameters& );
+     int32_t setVideoHDR(const QCameraParameters& );
++    int32_t setVtEnable(const QCameraParameters& );
+     int32_t setZoom(const QCameraParameters& );
+     int32_t setISOValue(const QCameraParameters& );
+     int32_t setRotation(const QCameraParameters& );
+@@ -584,6 +587,7 @@ private:
+     int32_t setSkinToneEnhancement(int sceFactor);
+     int32_t setSceneDetect(const char *scendDetect);
+     int32_t setVideoHDR(const char *videoHDR);
++    int32_t setVtEnable(const char *vtEnable);
+     int32_t setZoom(int zoom_level);
+     int32_t setISOValue(const char *isoValue);
+     int32_t setFlash(const char *flashStr);
+@@ -702,6 +706,7 @@ private:
+     cam_dimension_t m_LiveSnapshotSize; // live snapshot size
+     cam_dimension_t m_rawSize; // live snapshot size
+     bool m_bHDREnabled;             // if HDR is enabled
++    bool m_bAVTimerEnabled;    //if AVTimer is enabled
+     QCameraAdjustFPS *m_AdjustFPS;
+     bool m_bHDR1xFrameEnabled;          // if frame with exposure compensation 0 during HDR is enabled
+     bool m_HDRSceneEnabled; // Auto HDR indication
+diff --git a/QCamera2/stack/common/cam_intf.h b/QCamera2/stack/common/cam_intf.h
+index 012eb24..633bfde 100644
+--- a/QCamera2/stack/common/cam_intf.h
++++ b/QCamera2/stack/common/cam_intf.h
+@@ -354,6 +354,8 @@ typedef struct {
+     cam_stream_reproc_config_t reprocess_config;
+ 
+     cam_stream_parm_buffer_t parm_buf;    /* stream based parameters */
++
++    uint8_t useAVTimer; /*flag to indicate use of AVTimer for TimeStamps*/
+ } cam_stream_info_t;
+ 
+ /*****************************************************************************
+@@ -429,6 +431,7 @@ typedef union {
+     INCLUDE(CAM_INTF_PARM_HDR_NEED_1X,              int32_t,                     1);
+     INCLUDE(CAM_INTF_PARM_LOCK_CAF,                 int32_t,                     1);
+     INCLUDE(CAM_INTF_PARM_VIDEO_HDR,                int32_t,                     1);
++    INCLUDE(CAM_INTF_PARM_VT,                       int32_t,                     1);
+     INCLUDE(CAM_INTF_PARM_GET_CHROMATIX,            tune_chromatix_t,            1);
+     INCLUDE(CAM_INTF_PARM_SET_RELOAD_CHROMATIX,     tune_chromatix_t,            1);
+     INCLUDE(CAM_INTF_PARM_GET_AFTUNE,               tune_autofocus_t,            1);
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 1900fba..184b88c 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -928,6 +928,7 @@ typedef enum {
+     CAM_INTF_PARM_VIDEO_HDR,
+     CAM_INTF_PARM_ROTATION,
+     CAM_INTF_PARM_SCALE,
++    CAM_INTF_PARM_VT, /* indicating if it's a Video Call Apllication */
+     CAM_INTF_META_CROP_DATA,
+     CAM_INTF_META_PREP_SNAPSHOT_DONE,
+     CAM_INTF_META_GOOD_FRAME_IDX_RANGE,
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 3c28e2d..caf91d4 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -976,7 +976,10 @@ int32_t mm_stream_read_msm_frame(mm_stream_t * my_obj,
+         buf_info->buf->buf_idx = idx;
+         buf_info->buf->frame_idx = vb.sequence;
+         buf_info->buf->ts.tv_sec  = vb.timestamp.tv_sec;
+-        buf_info->buf->ts.tv_nsec = vb.timestamp.tv_usec * 1000;
++        if (my_obj->stream_info->useAVTimer)
++            buf_info->buf->ts.tv_nsec = vb.timestamp.tv_usec;
++        else
++            buf_info->buf->ts.tv_nsec = vb.timestamp.tv_usec * 1000;
+  #if 0
+         /* If YUV format, check chroma size to see if extra subsampling
+                 is applied */
+-- 
+1.8.3.1
+

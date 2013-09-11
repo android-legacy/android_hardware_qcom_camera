@@ -1,0 +1,153 @@
+From d180c98db5cb3c4742f5941adbf0e0a5cff8e684 Mon Sep 17 00:00:00 2001
+From: Manish Kumar <manishku@codeaurora.org>
+Date: Thu, 19 Sep 2013 01:29:20 -0700
+Subject: [PATCH 022/176] Camera: Fix for HAL compilation issues while
+ integrating HAL 1.0
+
+This change is required to resolve compilation issues
+while integrating HAL 1.0 with kk_3.5 branch.
+
+Change-Id: I0891a0753d2c4f0dccac95bcb0e92163c83e2193
+---
+ QCamera2/HAL/Android.mk            | 10 ++++++++--
+ QCamera2/HAL/QCamera2HWI.cpp       |  2 +-
+ QCamera2/HAL/QCamera2Hal.cpp       |  4 ++++
+ QCamera2/HAL/QCameraParameters.cpp | 10 +++++-----
+ QCamera2/HAL/test/qcamera_test.cpp |  4 ++++
+ 5 files changed, 22 insertions(+), 8 deletions(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index ea39404..e6b183e 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -1,7 +1,6 @@
+ LOCAL_PATH:= $(call my-dir)
+ 
+ include $(CLEAR_VARS)
+-
+ LOCAL_SRC_FILES := \
+         QCamera2Factory.cpp \
+         QCamera2Hal.cpp \
+@@ -22,6 +21,9 @@ LOCAL_CFLAGS = -Wall -Werror
+ #Debug logs are enabled
+ #LOCAL_CFLAGS += -DDISABLE_DEBUG_LOG
+ 
++ifeq ($(TARGET_USE_VENDOR_CAMERA_EXT),true)
++LOCAL_CFLAGS += -DUSE_VENDOR_CAMERA_EXT
++endif
+ ifneq ($(call is-platform-sdk-version-at-least,18),true)
+ LOCAL_CFLAGS += -DUSE_JB_MR1
+ endif
+@@ -29,13 +31,17 @@ endif
+ LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../stack/common \
+         frameworks/native/include/media/openmax \
+-        hardware/qcom/display/libgralloc \
+         hardware/qcom/media/libstagefrighthw \
+         $(LOCAL_PATH)/../../mm-image-codec/qexif \
+         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
+         $(LOCAL_PATH)/../util \
+         $(LOCAL_PATH)/wrapper
+ 
++ifeq ($(TARGET_USE_VENDOR_CAMERA_EXT),true)
++LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
++else
++LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
++endif
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/media
+ LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 50f621b..5f59fa6 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1475,7 +1475,7 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+         break;
+     case CAM_STREAM_TYPE_VIDEO:
+         {
+-            char value[32];
++            char value[PROPERTY_VALUE_MAX];
+             property_get("persist.camera.mem.usecache", value, "1");
+             if (atoi(value) == 0) {
+                 bCachedMem = QCAMERA_ION_USE_NOCACHE;
+diff --git a/QCamera2/HAL/QCamera2Hal.cpp b/QCamera2/HAL/QCamera2Hal.cpp
+index a2a2f17..1ff3231 100644
+--- a/QCamera2/HAL/QCamera2Hal.cpp
++++ b/QCamera2/HAL/QCamera2Hal.cpp
+@@ -48,4 +48,8 @@ camera_module_t HAL_MODULE_INFO_SYM = {
+ #ifndef USE_JB_MR1
+     set_callbacks: NULL,
+ #endif
++#ifdef USE_VENDOR_CAMERA_EXT
++    get_vendor_tag_ops: NULL,
++    reserved:  {0}
++#endif
+ };
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index e7985e5..fd73671 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -582,7 +582,7 @@ QCameraParameters::QCameraParameters()
+       m_bHDR1xExtraBufferNeeded(true),
+       m_tempMap()
+ {
+-    char value[32];
++    char value[PROPERTY_VALUE_MAX];
+     // TODO: may move to parameter instead of sysprop
+     property_get("persist.debug.sf.showfps", value, "0");
+     m_bDebugFps = atoi(value) > 0 ? true : false;
+@@ -1141,7 +1141,7 @@ int32_t QCameraParameters::setVideoSize(const QCameraParameters& params)
+  *==========================================================================*/
+ int32_t QCameraParameters::setLiveSnapshotSize(const QCameraParameters& params)
+ {
+-    char value[32];
++    char value[PROPERTY_VALUE_MAX];
+     property_get("persist.camera.opt.livepic", value, "1");
+     bool useOptimal = atoi(value) > 0 ? true : false;
+ 
+@@ -2857,7 +2857,7 @@ int32_t QCameraParameters::setCameraMode(const QCameraParameters& params)
+ int32_t QCameraParameters::setZslAttributes(const QCameraParameters& params)
+ {
+     // TODO: may switch to pure param instead of sysprop
+-    char prop[32];
++    char prop[PROPERTY_VALUE_MAX];
+ 
+     const char *str = params.get(KEY_QC_ZSL_BURST_INTERVAL);
+     if (str != NULL) {
+@@ -3002,7 +3002,7 @@ int32_t QCameraParameters::setBurstNum(const QCameraParameters& params)
+  *==========================================================================*/
+ int32_t QCameraParameters::setSnapshotFDReq(const QCameraParameters& params)
+ {
+-    char prop[32];
++    char prop[PROPERTY_VALUE_MAX];
+     const char *str = params.get(KEY_QC_SNAPSHOT_FD_DATA);
+ 
+     if(str != NULL){
+@@ -3880,7 +3880,7 @@ int32_t QCameraParameters::adjustPreviewFpsRange(cam_fps_range_t *fpsRange)
+ int32_t QCameraParameters::setPreviewFpsRange(int minFPS, int maxFPS)
+ {
+     char str[32];
+-    char value[32];
++    char value[PROPERTY_VALUE_MAX];
+     int fixedFpsValue;
+     /*This property get value should be the fps that user needs*/
+     property_get("persist.debug.set.fixedfps", value, "0");
+diff --git a/QCamera2/HAL/test/qcamera_test.cpp b/QCamera2/HAL/test/qcamera_test.cpp
+index b6a5ab0..63e054b 100644
+--- a/QCamera2/HAL/test/qcamera_test.cpp
++++ b/QCamera2/HAL/test/qcamera_test.cpp
+@@ -569,7 +569,11 @@ status_t CameraContext::startPreview()
+ #ifndef USE_JB_MR1
+ 
+         gbp = mPreviewSurface->getIGraphicBufferProducer();
++#ifdef USE_VENDOR_CAMERA_EXT
++        ret |= mCamera->setPreviewTarget(gbp);
++#else
+         ret |= mCamera->setPreviewTexture(gbp);
++#endif
+ 
+ #else
+ 
+-- 
+1.8.3.1
+

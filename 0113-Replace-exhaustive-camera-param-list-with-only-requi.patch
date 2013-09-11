@@ -1,0 +1,605 @@
+From d6331ccdb3cc0af843746f4e255e8ed90281c505 Mon Sep 17 00:00:00 2001
+From: Ramakrishna Nallamothu <rnallamo@codeaurora.org>
+Date: Thu, 19 Dec 2013 01:59:06 -0800
+Subject: [PATCH 113/176] Replace exhaustive camera param list with only
+ required runtime list (HAL)
+
+-- Parameters between HAL and Camera daemon is implemented as a direct
+   access exhaustive array/list
+-- Each element of the array is the maximum size of all the elements
+   possible
+-- This results in a huge chunk of memory to be requested three times
+   during camera runtime (one copy in HAL and two copies in Daemon)
+
+-- The direct index exhaustive list is replaced with a linear list of
+   only the runtime parameters
+-- Each element of the list is only the size of the parameter requested
+   and not the maximum possible size
+-- This results in a huge saving of memory, since the runtime parameter
+   requirement is only a small subset of all the parameters
+-- There is a search penalty associated with this approach, but as the
+   list doesn't grow beyond a few tens of parameters, it shouldn't be
+   significant
+-- If indeed the search penalty is ever found to be un-acceptable, then
+   the linear list can be replaced with a hash-list (in the future)
+
+Change-Id: Iacb88fe772dd883cd13946a456195e88e0916b80
+---
+ QCamera2/HAL/QCameraParameters.cpp                 | 186 +++++++++++++--------
+ QCamera2/HAL/QCameraParameters.h                   |   8 +-
+ QCamera2/stack/common/cam_intf.h                   |  40 +++++
+ QCamera2/stack/common/mm_camera_interface.h        |   4 +-
+ QCamera2/stack/mm-camera-interface/Android.mk      |   3 +-
+ QCamera2/stack/mm-camera-interface/inc/mm_camera.h |   4 +-
+ QCamera2/stack/mm-camera-interface/src/cam_intf.c  |  51 ++++++
+ QCamera2/stack/mm-camera-interface/src/mm_camera.c |  10 +-
+ .../mm-camera-interface/src/mm_camera_interface.c  |   6 +-
+ QCamera2/stack/mm-camera-test/Android.mk           |   4 +-
+ 10 files changed, 226 insertions(+), 90 deletions(-)
+ create mode 100644 QCamera2/stack/mm-camera-interface/src/cam_intf.c
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index aacc3a3..6154a49 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -3931,7 +3931,7 @@ int32_t QCameraParameters::init(cam_capability_t *capabilities,
+ 
+     //Allocate Set Param Buffer
+     m_pParamHeap = new QCameraHeapMemory(QCAMERA_ION_USE_CACHE);
+-    rc = m_pParamHeap->allocate(1, sizeof(parm_buffer_t));
++    rc = m_pParamHeap->allocate(1, ONE_MB_OF_PARAMS);
+     if(rc != OK) {
+         rc = NO_MEMORY;
+         ALOGE("Failed to allocate SETPARM Heap memory");
+@@ -3942,13 +3942,14 @@ int32_t QCameraParameters::init(cam_capability_t *capabilities,
+     rc = m_pCamOpsTbl->ops->map_buf(m_pCamOpsTbl->camera_handle,
+                              CAM_MAPPING_BUF_TYPE_PARM_BUF,
+                              m_pParamHeap->getFd(0),
+-                             sizeof(parm_buffer_t));
++                             ONE_MB_OF_PARAMS);
+     if(rc < 0) {
+         ALOGE("%s:failed to map SETPARM buffer",__func__);
+         rc = FAILED_TRANSACTION;
+         goto TRANS_INIT_ERROR2;
+     }
+-    m_pParamBuf = (parm_buffer_t*) DATA_PTR(m_pParamHeap,0);
++    m_pParamBuf = (parm_buffer_new_t*) DATA_PTR(m_pParamHeap,0);
++    sem_init(&m_pParamBuf->cam_sync_sem, 0, 0);
+ 
+     initDefaultParameters();
+ 
+@@ -3982,6 +3983,8 @@ void QCameraParameters::deinit()
+         return;
+     }
+ 
++    sem_destroy(&m_pParamBuf->cam_sync_sem);
++
+     //clear all entries in the map
+     String8 emptyStr;
+     QCameraParameters::unflatten(emptyStr);
+@@ -6869,7 +6872,7 @@ int32_t QCameraParameters::updateRAW(cam_dimension_t max_dim)
+         ALOGE("%s:Failed to get commit CAM_INTF_PARM_RAW_DIMENSION", __func__);
+         return rc;
+     }
+-    memcpy(&raw_dim,POINTER_OF(CAM_INTF_PARM_RAW_DIMENSION,m_pParamBuf),sizeof(cam_dimension_t));
++    memcpy(&raw_dim,POINTER_OF_PARAM(CAM_INTF_PARM_RAW_DIMENSION,m_pParamBuf),sizeof(cam_dimension_t));
+     ALOGE("%s : RAW Dimension = %d X %d",__func__,raw_dim.width,raw_dim.height);
+     if (raw_dim.width == 0 || raw_dim.height == 0) {
+         ALOGE("%s: Error getting RAW size. Setting to Capability value",__func__);
+@@ -7155,15 +7158,17 @@ const char *QCameraParameters::getFrameFmtString(cam_format_t fmt)
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int32_t QCameraParameters::initBatchUpdate(parm_buffer_t *p_table)
++int32_t QCameraParameters::initBatchUpdate(void *p_table)
+ {
+-    int32_t hal_version = CAM_HAL_V1;
+     m_tempMap.clear();
++    ALOGD("%s:Initializing batch parameter set",__func__);
++
++    parm_buffer_new_t *param_buf = (parm_buffer_new_t *)p_table;
++    memset(param_buf, 0, sizeof(ONE_MB_OF_PARAMS));
++    param_buf->num_entry = 0;
++    param_buf->curr_size = 0;
++    param_buf->tot_rem_size = ONE_MB_OF_PARAMS - sizeof(parm_buffer_new_t);
+ 
+-    memset(p_table, 0, sizeof(parm_buffer_t));
+-    p_table->first_flagged_entry = CAM_INTF_PARM_MAX;
+-    AddSetParmEntryToBatch(p_table, CAM_INTF_PARM_HAL_VERSION,
+-                sizeof(hal_version), &hal_version);
+     return NO_ERROR;
+ }
+ 
+@@ -7182,45 +7187,57 @@ int32_t QCameraParameters::initBatchUpdate(parm_buffer_t *p_table)
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int32_t QCameraParameters::AddSetParmEntryToBatch(parm_buffer_t *p_table,
++int32_t QCameraParameters::AddSetParmEntryToBatch(void *p_table,
+                                                   cam_intf_parm_type_t paramType,
+                                                   uint32_t paramLength,
+                                                   void *paramValue)
+ {
+-    int position = paramType;
+-    int current, next;
+-
+-    /*************************************************************************
+-    *                 Code to take care of linking next flags                *
+-    *************************************************************************/
+-    current = GET_FIRST_PARAM_ID(p_table);
+-    if (position == current){
+-        //DO NOTHING
+-    } else if (position < current){
+-        SET_NEXT_PARAM_ID(position, p_table, current);
+-        SET_FIRST_PARAM_ID(p_table, position);
+-    } else {
+-        /* Search for the position in the linked list where we need to slot in*/
+-        while (position > GET_NEXT_PARAM_ID(current, p_table))
+-            current = GET_NEXT_PARAM_ID(current, p_table);
+-
+-        /*If node already exists no need to alter linking*/
+-        if (position != GET_NEXT_PARAM_ID(current, p_table)) {
+-            next = GET_NEXT_PARAM_ID(current, p_table);
+-            SET_NEXT_PARAM_ID(current, p_table, position);
+-            SET_NEXT_PARAM_ID(position, p_table, next);
+-        }
++    uint32_t j = 0;
++    parm_buffer_new_t *param_buf = (parm_buffer_new_t *)p_table;
++    uint32_t num_entry = param_buf->num_entry;
++    uint32_t size_req = paramLength + sizeof(parm_entry_type_new_t);
++    uint32_t aligned_size_req = (size_req + 3) & (~3);
++    parm_entry_type_new_t *curr_param = (parm_entry_type_new_t *)&param_buf->entry[0];
++
++    /* first search if the key is already present in the batch list
++     * this is a search penalty but as the batch list is never more
++     * than a few tens of entries at most,it should be ok.
++     * if search performance becomes a bottleneck, we can
++     * think of implementing a hashing mechanism.
++     * but it is still better than the huge memory required for
++     * direct indexing
++     */
++    for (j = 0; j < num_entry; j++) {
++      if (paramType == curr_param->entry_type) {
++        ALOGD("%s:Batch parameter overwrite for param: %d",
++                                                __func__, paramType);
++        break;
++      }
++      curr_param = GET_NEXT_PARAM(curr_param, parm_entry_type_new_t);
+     }
+ 
+-    /*************************************************************************
+-    *                   Copy contents into entry                             *
+-    *************************************************************************/
++    //new param, search not found
++    if (j == num_entry) {
++      if (aligned_size_req > param_buf->tot_rem_size) {
++        ALOGE("%s:Batch buffer running out of size, commit and resend",__func__);
++        commitSetBatch();
++        initBatchUpdate(p_table);
++      }
+ 
+-    if (paramLength > sizeof(parm_type_t)) {
+-        ALOGE("%s:Size of input larger than max entry size",__func__);
+-        return BAD_VALUE;
++      curr_param = (parm_entry_type_new_t *)(&param_buf->entry[0] +
++                                                  param_buf->curr_size);
++      param_buf->curr_size += aligned_size_req;
++      param_buf->tot_rem_size -= aligned_size_req;
++      param_buf->num_entry++;
+     }
+-    memcpy(POINTER_OF(paramType,p_table), paramValue, paramLength);
++
++    curr_param->entry_type = paramType;
++    curr_param->size = (int32_t)paramLength;
++    curr_param->aligned_size = aligned_size_req;
++    memcpy(&curr_param->data[0], paramValue, paramLength);
++    ALOGD("%s: num_entry: %d, paramType: %d, paramLength: %d, aligned_size_req: %d",
++            __func__, param_buf->num_entry, paramType, paramLength, aligned_size_req);
++
+     return NO_ERROR;
+ }
+ 
+@@ -7237,34 +7254,59 @@ int32_t QCameraParameters::AddSetParmEntryToBatch(parm_buffer_t *p_table,
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int32_t QCameraParameters::AddGetParmEntryToBatch(parm_buffer_t *p_table,
++int32_t QCameraParameters::AddGetParmEntryToBatch(void *p_table,
+                                                   cam_intf_parm_type_t paramType)
+ {
+-    int position = paramType;
+-    int current, next;
+-
+-    /*************************************************************************
+-    *                 Code to take care of linking next flags                *
+-    *************************************************************************/
+-    current = GET_FIRST_PARAM_ID(p_table);
+-    if (position == current){
+-        //DO NOTHING
+-    } else if (position < current){
+-        SET_NEXT_PARAM_ID(position, p_table, current);
+-        SET_FIRST_PARAM_ID(p_table, position);
+-    } else {
+-        /* Search for the position in the linked list where we need to slot in*/
+-        while (position > GET_NEXT_PARAM_ID(current, p_table))
+-            current = GET_NEXT_PARAM_ID(current, p_table);
+-
+-        /*If node already exists no need to alter linking*/
+-        if (position != GET_NEXT_PARAM_ID(current, p_table)) {
+-            next=GET_NEXT_PARAM_ID(current, p_table);
+-            SET_NEXT_PARAM_ID(current, p_table, position);
+-            SET_NEXT_PARAM_ID(position, p_table, next);
+-        }
++    ///in get params, we have no information on the size of the param requested
++    //for, hence we assume the largest size and reserve space for the same
++    uint32_t j = 0;
++    uint32_t paramLength = sizeof(parm_type_t);
++    parm_buffer_new_t *param_buf = (parm_buffer_new_t *)p_table;
++    uint32_t num_entry = param_buf->num_entry;
++    uint32_t size_req = paramLength + sizeof(parm_entry_type_new_t) - sizeof(char);
++    uint32_t aligned_size_req = (size_req + 3) & (~3);
++    parm_entry_type_new_t *curr_param = (parm_entry_type_new_t *)&param_buf->entry[0];
++
++    /* first search if the key is already present in the batch list
++     * this is a search penalty but as the batch list is never more
++     * than a few tens of entries at most,it should be ok.
++     * if search performance becomes a bottleneck, we can
++     * think of implementing a hashing mechanism.
++     * but it is still better than the huge memory required for
++     * direct indexing
++     */
++    for (j = 0; j < num_entry; j++) {
++      if (paramType == curr_param->entry_type) {
++        ALOGD("%s:Batch parameter overwrite for param: %d",
++                                                __func__, paramType);
++        break;
++      }
++      curr_param = GET_NEXT_PARAM(curr_param, parm_entry_type_new_t);
++    }
++
++    //new param, search not found
++    if (j == num_entry) {
++      if (aligned_size_req > param_buf->tot_rem_size) {
++        ALOGE("%s:Batch buffer running out of size, commit and resend",__func__);
++        //this is an extreme corner case
++        //if the size of the batch set is full, we return error
++        //the caller is expected to commit the get batch, use the params
++        //returned, initialize the batch again and continue
++        return NO_MEMORY;
++      }
++
++      curr_param = (parm_entry_type_new_t *)(&param_buf->entry[0] +
++                                                  param_buf->curr_size);
++      param_buf->curr_size += aligned_size_req;
++      param_buf->tot_rem_size -= aligned_size_req;
++      param_buf->num_entry++;
+     }
+ 
++    curr_param->entry_type = paramType;
++    curr_param->size = (int32_t)paramLength;
++    curr_param->aligned_size = aligned_size_req;
++    ALOGD("%s:num_entry: %d, paramType: %d ",__func__, param_buf->num_entry, paramType);
++
+     return NO_ERROR;
+ }
+ 
+@@ -7282,8 +7324,11 @@ int32_t QCameraParameters::AddGetParmEntryToBatch(parm_buffer_t *p_table,
+ int32_t QCameraParameters::commitSetBatch()
+ {
+     int32_t rc = NO_ERROR;
+-    if (m_pParamBuf->first_flagged_entry < CAM_INTF_PARM_MAX) {
+-        rc = m_pCamOpsTbl->ops->set_parms(m_pCamOpsTbl->camera_handle, m_pParamBuf);
++    if (m_pParamBuf->num_entry > 0) {
++        rc = m_pCamOpsTbl->ops->set_parms(m_pCamOpsTbl->camera_handle,
++                                                      (void *)m_pParamBuf);
++        ALOGD("%s:waiting for commitSetBatch to complete",__func__);
++        sem_wait(&m_pParamBuf->cam_sync_sem);
+     }
+     if (rc == NO_ERROR) {
+         // commit change from temp storage into param map
+@@ -7305,8 +7350,11 @@ int32_t QCameraParameters::commitSetBatch()
+  *==========================================================================*/
+ int32_t QCameraParameters::commitGetBatch()
+ {
+-    if (m_pParamBuf->first_flagged_entry < CAM_INTF_PARM_MAX) {
+-        return m_pCamOpsTbl->ops->get_parms(m_pCamOpsTbl->camera_handle, m_pParamBuf);
++    if (m_pParamBuf->num_entry > 0) {
++        return m_pCamOpsTbl->ops->get_parms(m_pCamOpsTbl->camera_handle,
++                                                          (void *)m_pParamBuf);
++        ALOGD("%s:waiting for commitGetBatch to complete",__func__);
++        sem_wait(&m_pParamBuf->cam_sync_sem);
+     } else {
+         return NO_ERROR;
+     }
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 48717a6..e325ed0 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -654,13 +654,13 @@ private:
+     const char *lookupNameByValue(const QCameraMap arr[], int len, int value);
+ 
+     // ops for batch set/get params with server
+-    int32_t initBatchUpdate(parm_buffer_t *p_table);
+-    int32_t AddSetParmEntryToBatch(parm_buffer_t *p_table,
++    int32_t initBatchUpdate(void *p_table);
++    int32_t AddSetParmEntryToBatch(void *p_table,
+                                    cam_intf_parm_type_t paramType,
+                                    uint32_t paramLength,
+                                    void *paramValue);
+     int32_t commitSetBatch();
+-    int32_t AddGetParmEntryToBatch(parm_buffer_t *p_table,
++    int32_t AddGetParmEntryToBatch(void *p_table,
+                                    cam_intf_parm_type_t paramType);
+     int32_t commitGetBatch();
+ 
+@@ -693,7 +693,7 @@ private:
+     cam_capability_t *m_pCapability;
+     mm_camera_vtbl_t *m_pCamOpsTbl;
+     QCameraHeapMemory *m_pParamHeap;
+-    parm_buffer_t     *m_pParamBuf;  // ptr to param buf in m_pParamHeap
++    parm_buffer_new_t *m_pParamBuf; // ptr to param buf in m_pParamHeap
+ 
+     bool m_bZslMode;                // if ZSL is enabled
+     bool m_bZslMode_new;
+diff --git a/QCamera2/stack/common/cam_intf.h b/QCamera2/stack/common/cam_intf.h
+index 49ead1c..2087665 100644
+--- a/QCamera2/stack/common/cam_intf.h
++++ b/QCamera2/stack/common/cam_intf.h
+@@ -31,8 +31,10 @@
+ #define __QCAMERA_INTF_H__
+ 
+ #include <media/msmb_isp.h>
++#include <semaphore.h>
+ #include "cam_types.h"
+ 
++#define ONE_MB_OF_PARAMS (1024 * 1024)
+ #define CAM_PRIV_IOCTL_BASE (V4L2_CID_PRIVATE_BASE + 14)
+ typedef enum {
+     /* session based parameters */
+@@ -384,6 +386,10 @@ typedef struct {
+ #define INCLUDE(PARAM_ID,DATATYPE,COUNT)  \
+         DATATYPE member_variable_##PARAM_ID[ COUNT ]
+ 
++#define GET_NEXT_PARAM(TABLE_PTR, TYPE)    \
++        (TYPE *)((char *)TABLE_PTR +       \
++               TABLE_PTR->aligned_size)    \
++
+ typedef union {
+ /**************************************************************************************
+  *          ID from (cam_intf_parm_type_t)          DATATYPE                     COUNT
+@@ -567,9 +573,43 @@ typedef struct {
+     uint8_t next_flagged_entry;
+ } parm_entry_type_t;
+ 
++//we need to align these contiguous param structures in memory
++typedef struct {
++    cam_intf_parm_type_t entry_type;
++    uint32_t size;
++    uint32_t aligned_size;
++    char data[1];
++} parm_entry_type_new_t;
++
+ typedef struct {
+     uint8_t first_flagged_entry;
+     parm_entry_type_t entry[CAM_INTF_PARM_MAX];
+ } parm_buffer_t;
+ 
++typedef struct {
++    uint32_t num_entry;
++    uint32_t tot_rem_size;
++    uint32_t curr_size;
++    //there is no clear documentation in Android on the use of a
++    //named semaphore for inter-process synchronization, like
++    //the ones available in System V and Posix. However, as this
++    //semaphore will reside in a mapped memory between two
++    //processes, it's expected to work well. Detailed testing may
++    //be necessary. Semaphore is kicked in only in the extreme
++    //case of a batch set param, where memory memory for the
++    //initial batch is exhausted and caller waits before they are
++    //copied in the camera daemon
++    sem_t   cam_sync_sem;
++    char entry[1];
++} parm_buffer_new_t;
++
++#ifdef  __cplusplus
++extern "C" {
++#endif
++void *POINTER_OF_PARAM(cam_intf_parm_type_t PARAM_ID,
++                    void *TABLE_PTR);
++#ifdef  __cplusplus
++}
++#endif
++
+ #endif /* __QCAMERA_INTF_H__ */
+diff --git a/QCamera2/stack/common/mm_camera_interface.h b/QCamera2/stack/common/mm_camera_interface.h
+index 7ca99f9..0eea729 100644
+--- a/QCamera2/stack/common/mm_camera_interface.h
++++ b/QCamera2/stack/common/mm_camera_interface.h
+@@ -329,7 +329,7 @@ typedef struct {
+      *       buf before this call
+      **/
+     int32_t (*set_parms) (uint32_t camera_handle,
+-                          parm_buffer_t *parms);
++                          void *parms);
+ 
+     /** get_parms: fucntion definition for querying camera
+      *             based parameters from server
+@@ -343,7 +343,7 @@ typedef struct {
+      *       the buf before this call
+      **/
+     int32_t (*get_parms) (uint32_t camera_handle,
+-                          parm_buffer_t *parms);
++                          void *parms);
+ 
+     /** do_auto_focus: fucntion definition for performing auto focus
+      *    @camera_handle : camer handler
+diff --git a/QCamera2/stack/mm-camera-interface/Android.mk b/QCamera2/stack/mm-camera-interface/Android.mk
+index 1e5af1e..e05a856 100755
+--- a/QCamera2/stack/mm-camera-interface/Android.mk
++++ b/QCamera2/stack/mm-camera-interface/Android.mk
+@@ -10,7 +10,8 @@ MM_CAM_FILES := \
+         src/mm_camera_channel.c \
+         src/mm_camera_stream.c \
+         src/mm_camera_thread.c \
+-        src/mm_camera_sock.c
++        src/mm_camera_sock.c \
++        src/cam_intf.c
+ 
+ ifeq ($(strip $(TARGET_USES_ION)),true)
+     LOCAL_CFLAGS += -DUSE_ION
+diff --git a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+index d0e74fe..0abb8bf 100644
+--- a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
++++ b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+@@ -426,9 +426,9 @@ extern int32_t mm_camera_qbuf(mm_camera_obj_t *my_obj,
+                               mm_camera_buf_def_t *buf);
+ extern int32_t mm_camera_query_capability(mm_camera_obj_t *my_obj);
+ extern int32_t mm_camera_set_parms(mm_camera_obj_t *my_obj,
+-                                   parm_buffer_t *parms);
++                                   void *parms);
+ extern int32_t mm_camera_get_parms(mm_camera_obj_t *my_obj,
+-                                   parm_buffer_t *parms);
++                                   void *parms);
+ extern int32_t mm_camera_map_buf(mm_camera_obj_t *my_obj,
+                                  uint8_t buf_type,
+                                  int fd,
+diff --git a/QCamera2/stack/mm-camera-interface/src/cam_intf.c b/QCamera2/stack/mm-camera-interface/src/cam_intf.c
+new file mode 100644
+index 0000000..1e08dc2
+--- /dev/null
++++ b/QCamera2/stack/mm-camera-interface/src/cam_intf.c
+@@ -0,0 +1,51 @@
++/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ */
++
++#include "cam_intf.h"
++
++void *POINTER_OF_PARAM(cam_intf_parm_type_t PARAM_ID,
++                 void *table_ptr)
++{
++  parm_buffer_new_t *TABLE_PTR = (parm_buffer_new_t *)table_ptr;
++  int32_t j = 0, i = TABLE_PTR->num_entry;
++  parm_entry_type_new_t *curr_param =
++              (parm_entry_type_new_t *)&TABLE_PTR->entry[0];
++
++  for (j = 0; j < i; j++) {
++    if (PARAM_ID == curr_param->entry_type) {
++      return (void *)&curr_param->data[0];
++    }
++    curr_param = GET_NEXT_PARAM(curr_param, parm_entry_type_new_t);
++  }
++  curr_param = (parm_entry_type_new_t *)&TABLE_PTR->entry[0];
++  return (void *)&curr_param->data[0]; //should not be coming here
++                                       //this is just to prevent a crash
++                                       //for the caller
++}
++
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera.c b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+index f51fcc5..0471821 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+@@ -523,12 +523,11 @@ int32_t mm_camera_query_capability(mm_camera_obj_t *my_obj)
+  *              domain socket. Corresponding fields of parameters to be set
+  *              are already filled in by upper layer caller.
+  *==========================================================================*/
+-int32_t mm_camera_set_parms(mm_camera_obj_t *my_obj,
+-                            parm_buffer_t *parms)
++int32_t mm_camera_set_parms(mm_camera_obj_t *my_obj, void *parms)
+ {
+     int32_t rc = -1;
+     int32_t value = 0;
+-    if (parms !=  NULL) {
++    if ((parm_buffer_new_t *)parms !=  NULL) {
+         rc = mm_camera_util_s_ctrl(my_obj->ctrl_fd, CAM_PRIV_PARM, &value);
+     }
+     pthread_mutex_unlock(&my_obj->cam_lock);
+@@ -553,12 +552,11 @@ int32_t mm_camera_set_parms(mm_camera_obj_t *my_obj,
+  *              fields of requested parameters will be filled in by server with
+  *              detailed information.
+  *==========================================================================*/
+-int32_t mm_camera_get_parms(mm_camera_obj_t *my_obj,
+-                            parm_buffer_t *parms)
++int32_t mm_camera_get_parms(mm_camera_obj_t *my_obj, void *parms)
+ {
+     int32_t rc = -1;
+     int32_t value = 0;
+-    if (parms != NULL) {
++    if ((parm_buffer_new_t *)parms != NULL) {
+         rc = mm_camera_util_g_ctrl(my_obj->ctrl_fd, CAM_PRIV_PARM, &value);
+     }
+     pthread_mutex_unlock(&my_obj->cam_lock);
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+index e0f81c2..0ee6b3d 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+@@ -181,8 +181,7 @@ static int32_t mm_camera_intf_query_capability(uint32_t camera_handle)
+  *              domain socket. Corresponding fields of parameters to be set
+  *              are already filled in by upper layer caller.
+  *==========================================================================*/
+-static int32_t mm_camera_intf_set_parms(uint32_t camera_handle,
+-                                        parm_buffer_t *parms)
++static int32_t mm_camera_intf_set_parms(uint32_t camera_handle, void *parms)
+ {
+     int32_t rc = -1;
+     mm_camera_obj_t * my_obj = NULL;
+@@ -218,8 +217,7 @@ static int32_t mm_camera_intf_set_parms(uint32_t camera_handle,
+  *              fields of requested parameters will be filled in by server with
+  *              detailed information.
+  *==========================================================================*/
+-static int32_t mm_camera_intf_get_parms(uint32_t camera_handle,
+-                                        parm_buffer_t *parms)
++static int32_t mm_camera_intf_get_parms(uint32_t camera_handle, void *parms)
+ {
+     int32_t rc = -1;
+     mm_camera_obj_t * my_obj = NULL;
+diff --git a/QCamera2/stack/mm-camera-test/Android.mk b/QCamera2/stack/mm-camera-test/Android.mk
+index fb34b0d..127610c 100644
+--- a/QCamera2/stack/mm-camera-test/Android.mk
++++ b/QCamera2/stack/mm-camera-test/Android.mk
+@@ -83,7 +83,7 @@ endif
+ LOCAL_CFLAGS += -Wall -Werror
+ 
+ LOCAL_SHARED_LIBRARIES:= \
+-         libcutils libdl
++         libcutils libdl libmmcamera_interface
+ 
+ LOCAL_MODULE_TAGS := optional
+ 
+@@ -173,7 +173,7 @@ endif
+ LOCAL_CFLAGS += -Wall -Werror
+ 
+ LOCAL_SHARED_LIBRARIES:= \
+-         libcutils libdl
++         libcutils libdl libmmcamera_interface
+ 
+ LOCAL_MODULE_TAGS := optional
+ 
+-- 
+1.8.3.1
+

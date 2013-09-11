@@ -1,0 +1,28 @@
+From 6315d9b1b1652122facc515672f89c3413b46783 Mon Sep 17 00:00:00 2001
+From: Fei Zhang <feizhang@codeaurora.org>
+Date: Tue, 23 Sep 2014 14:18:39 +0800
+Subject: [PATCH 139/176] QCamera2: init m_bLongShotEnabled in Constructor.
+
+m_bLongShotEnabled should be inited properly in order to avoid
+random value.
+
+Change-Id: I948f29f8fe7407c7fa6c20848321f5b53950359d
+---
+ QCamera2/HAL/QCameraParameters.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index b909fe4..db54a02 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -576,6 +576,7 @@ QCameraParameters::QCameraParameters()
+       m_bSnapshotFlipChanged(false),
+       m_bFixedFrameRateSet(false),
+       m_bHDREnabled(false),
++      m_bLongShotEnabled(false),
+       m_bAVTimerEnabled(false),
+       m_bDISEnabled(false),
+       m_AdjustFPS(NULL),
+-- 
+1.8.3.1
+

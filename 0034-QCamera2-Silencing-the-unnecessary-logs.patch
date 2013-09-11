@@ -1,0 +1,547 @@
+From ada060d38765c1e3e2b0323884fb91dfd41c8b87 Mon Sep 17 00:00:00 2001
+From: Cherian Deepak <dcheri@codeaurora.org>
+Date: Fri, 11 Oct 2013 10:51:25 -0700
+Subject: [PATCH 034/176]  QCamera2: Silencing the unnecessary logs
+
+ Removing the unnecessary logs to reduce
+ excessive logging
+
+Change-Id: I68486a78536e56efbdc656874dfc63f46be76949
+---
+ QCamera2/HAL/QCamera2Factory.cpp   |  2 +-
+ QCamera2/HAL/QCamera2HWI.cpp       | 14 ++++-----
+ QCamera2/HAL/QCameraMem.cpp        |  4 +--
+ QCamera2/HAL/QCameraParameters.cpp | 60 +++++++++++++++++++-------------------
+ QCamera2/HAL/QCameraPostProc.cpp   | 20 ++++++-------
+ QCamera2/HAL/QCameraStream.cpp     | 14 ++++-----
+ 6 files changed, 57 insertions(+), 57 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2Factory.cpp b/QCamera2/HAL/QCamera2Factory.cpp
+index 4408cce..36d44ee 100644
+--- a/QCamera2/HAL/QCamera2Factory.cpp
++++ b/QCamera2/HAL/QCamera2Factory.cpp
+@@ -129,7 +129,7 @@ int QCamera2Factory::getNumberOfCameras()
+ int QCamera2Factory::getCameraInfo(int camera_id, struct camera_info *info)
+ {
+     int rc;
+-    ALOGE("%s: E, camera_id = %d", __func__, camera_id);
++    ALOGV("%s: E, camera_id = %d", __func__, camera_id);
+ 
+     if (!mNumOfCameras || camera_id >= mNumOfCameras || !info) {
+         return INVALID_OPERATION;
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 1822459..c502044 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -4338,7 +4338,7 @@ void QCamera2HardwareInterface::returnStreamBuffer(void *data,
+ int32_t QCamera2HardwareInterface::processHistogramStats(cam_hist_stats_t &stats_data)
+ {
+     if (!mParameters.isHistogramEnabled()) {
+-        ALOGD("%s: Histogram not enabled, no ops here", __func__);
++        ALOGV("%s: Histogram not enabled, no ops here", __func__);
+         return NO_ERROR;
+     }
+ 
+@@ -4458,13 +4458,13 @@ int QCamera2HardwareInterface::calcThermalLevel(
+         break;
+     default:
+         {
+-            ALOGE("%s: Invalid thermal level %d", __func__, level);
++            ALOGV("%s: Invalid thermal level %d", __func__, level);
+             return BAD_VALUE;
+         }
+         break;
+     }
+ 
+-    ALOGI("%s: Thermal level %d, FPS range [%3.2f,%3.2f], frameskip %d",
++    ALOGV("%s: Thermal level %d, FPS range [%3.2f,%3.2f], frameskip %d",
+           __func__,
+           level,
+           adjustedRange.min_fps,
+@@ -4901,7 +4901,7 @@ QCameraExif *QCamera2HardwareInterface::getExifData()
+                        count,
+                        (void *)gpsProcessingMethod);
+     } else {
+-        ALOGE("%s: getExifGpsProcessingMethod failed", __func__);
++        ALOGV("%s: getExifGpsProcessingMethod failed", __func__);
+     }
+ 
+     rat_t latitude[3];
+@@ -4917,7 +4917,7 @@ QCameraExif *QCamera2HardwareInterface::getExifData()
+                        2,
+                        (void *)latRef);
+     } else {
+-        ALOGE("%s: getExifLatitude failed", __func__);
++        ALOGV("%s: getExifLatitude failed", __func__);
+     }
+ 
+     rat_t longitude[3];
+@@ -4934,7 +4934,7 @@ QCameraExif *QCamera2HardwareInterface::getExifData()
+                        2,
+                        (void *)lonRef);
+     } else {
+-        ALOGE("%s: getExifLongitude failed", __func__);
++        ALOGV("%s: getExifLongitude failed", __func__);
+     }
+ 
+     rat_t altitude;
+@@ -4951,7 +4951,7 @@ QCameraExif *QCamera2HardwareInterface::getExifData()
+                        1,
+                        (void *)&altRef);
+     } else {
+-        ALOGE("%s: getExifAltitude failed", __func__);
++        ALOGV("%s: getExifAltitude failed", __func__);
+     }
+ 
+     char gpsDateStamp[20];
+diff --git a/QCamera2/HAL/QCameraMem.cpp b/QCamera2/HAL/QCameraMem.cpp
+index 76cc9a3..7713df0 100644
+--- a/QCamera2/HAL/QCameraMem.cpp
++++ b/QCamera2/HAL/QCameraMem.cpp
+@@ -118,7 +118,7 @@ int QCameraMemory::cacheOpsInternal(int index, unsigned int cmd, void *vaddr)
+     custom_data.cmd = cmd;
+     custom_data.arg = (unsigned long)&cache_inv_data;
+ 
+-    ALOGD("%s: addr = %p, fd = %d, handle = %p length = %d, ION Fd = %d",
++    ALOGV("%s: addr = %p, fd = %d, handle = %p length = %d, ION Fd = %d",
+          __func__, cache_inv_data.vaddr, cache_inv_data.fd,
+          cache_inv_data.handle, cache_inv_data.length,
+          mMemInfo[index].main_ion_fd);
+@@ -1287,7 +1287,7 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+                     mPrivateHandle[cnt]->size,
+                     1,
+                     (void *)this);
+-        ALOGD("%s: idx = %d, fd = %d, size = %d, offset = %d",
++        ALOGV("%s: idx = %d, fd = %d, size = %d, offset = %d",
+               __func__, cnt, mPrivateHandle[cnt]->fd,
+               mPrivateHandle[cnt]->size,
+               mPrivateHandle[cnt]->offset);
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 39a30c7..ec79ba7 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -1298,7 +1298,7 @@ int32_t QCameraParameters::setPictureFormat(const QCameraParameters& params)
+         mPictureFormat = pictureFormat;
+ 
+         CameraParameters::setPictureFormat(str);
+-        ALOGE("%s: format %d\n", __func__, mPictureFormat);
++        ALOGV("%s: format %d\n", __func__, mPictureFormat);
+         return NO_ERROR;
+     }
+     ALOGE("Invalid picture format value: %s", (str == NULL) ? "NULL" : str);
+@@ -1889,7 +1889,7 @@ int32_t QCameraParameters::setStatsDebugMask()
+     property_get("persist.camera.stats.debug.mask", value, "0");
+     mask = (uint32_t)atoi(value);
+ 
+-    ALOGE("%s: ctrl mask :%d", __func__, mask);
++    ALOGV("%s: ctrl mask :%d", __func__, mask);
+ 
+     return AddSetParmEntryToBatch(m_pParamBuf,
+                                   CAM_INTF_PARM_STATS_DEBUG_MASK,
+@@ -2213,13 +2213,13 @@ int32_t QCameraParameters::setAutoHDR(const QCameraParameters& params)
+     if (str != NULL) {
+        if (prev_str == NULL ||
+            strcmp(str, prev_str) != 0) {
+-           ALOGD("%s : Auto HDR set to: %s", __func__, str);
++           ALOGV("%s : Auto HDR set to: %s", __func__, str);
+            return updateParamEntry(KEY_QC_AUTO_HDR_ENABLE, str);
+        }
+     } else {
+        if (prev_str == NULL ||
+            strcmp(prev_str, prop) != 0 ) {
+-           ALOGD("%s : Auto HDR set to: %s", __func__, prop);
++           ALOGV("%s : Auto HDR set to: %s", __func__, prop);
+            updateParamEntry(KEY_QC_AUTO_HDR_ENABLE, prop);
+        }
+     }
+@@ -3982,7 +3982,7 @@ int32_t QCameraParameters::setPreviewFpsRange(int minFPS, int maxFPS)
+ 
+     if ( NULL != m_AdjustFPS ) {
+         m_AdjustFPS->recalcFPSRange(minFPS, maxFPS);
+-        ALOGD("%s: Thermal adjusted preview fps range %d,%d",
++        ALOGV("%s: Thermal adjusted preview fps range %d,%d",
+               __func__,
+               minFPS,
+               maxFPS);
+@@ -4017,7 +4017,7 @@ int32_t QCameraParameters::setAutoExposure(const char *autoExp)
+                                    sizeof(AUTO_EXPOSURE_MAP)/sizeof(AUTO_EXPOSURE_MAP[0]),
+                                    autoExp);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting auto exposure %s", __func__, autoExp);
++            ALOGV("%s: Setting auto exposure %s", __func__, autoExp);
+             updateParamEntry(KEY_QC_AUTO_EXPOSURE, autoExp);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_AEC_ALGO_TYPE,
+@@ -4048,7 +4048,7 @@ int32_t QCameraParameters::setEffect(const char *effect)
+                                    sizeof(EFFECT_MODES_MAP)/sizeof(QCameraMap),
+                                    effect);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting effect %s", __func__, effect);
++            ALOGV("%s: Setting effect %s", __func__, effect);
+             updateParamEntry(KEY_EFFECT, effect);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_EFFECT,
+@@ -4079,7 +4079,7 @@ int32_t QCameraParameters::setBrightness(int brightness)
+     updateParamEntry(KEY_QC_BRIGHTNESS, val);
+ 
+     int32_t value = brightness;
+-    ALOGD("%s: Setting brightness %s", __func__, val);
++    ALOGV("%s: Setting brightness %s", __func__, val);
+     return AddSetParmEntryToBatch(m_pParamBuf,
+                                   CAM_INTF_PARM_BRIGHTNESS,
+                                   sizeof(value),
+@@ -4106,7 +4106,7 @@ int32_t QCameraParameters::setFocusMode(const char *focusMode)
+                                    sizeof(FOCUS_MODES_MAP)/sizeof(QCameraMap),
+                                    focusMode);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting focus mode %s", __func__, focusMode);
++            ALOGV("%s: Setting focus mode %s", __func__, focusMode);
+             mFocusMode = (cam_focus_mode_type)value;
+ 
+             // reset need lock CAF flag
+@@ -4146,7 +4146,7 @@ int32_t QCameraParameters::setSharpness(int sharpness)
+     char val[16];
+     sprintf(val, "%d", sharpness);
+     updateParamEntry(KEY_QC_SHARPNESS, val);
+-    ALOGD("%s: Setting sharpness %s", __func__, val);
++    ALOGV("%s: Setting sharpness %s", __func__, val);
+ 
+     int32_t value = sharpness;
+     return AddSetParmEntryToBatch(m_pParamBuf,
+@@ -4172,7 +4172,7 @@ int32_t QCameraParameters::setSkinToneEnhancement(int sceFactor)
+     char val[16];
+     sprintf(val, "%d", sceFactor);
+     updateParamEntry(KEY_QC_SCE_FACTOR, val);
+-    ALOGD("%s: Setting skintone enhancement %s", __func__, val);
++    ALOGV("%s: Setting skintone enhancement %s", __func__, val);
+ 
+     int32_t value = sceFactor;
+     return AddSetParmEntryToBatch(m_pParamBuf,
+@@ -4198,7 +4198,7 @@ int32_t QCameraParameters::setSaturation(int saturation)
+     char val[16];
+     sprintf(val, "%d", saturation);
+     updateParamEntry(KEY_QC_SATURATION, val);
+-    ALOGD("%s: Setting saturation %s", __func__, val);
++    ALOGV("%s: Setting saturation %s", __func__, val);
+ 
+     int32_t value = saturation;
+     return AddSetParmEntryToBatch(m_pParamBuf,
+@@ -4224,7 +4224,7 @@ int32_t QCameraParameters::setContrast(int contrast)
+     char val[16];
+     sprintf(val, "%d", contrast);
+     updateParamEntry(KEY_QC_CONTRAST, val);
+-    ALOGD("%s: Setting contrast %s", __func__, val);
++    ALOGV("%s: Setting contrast %s", __func__, val);
+ 
+     int32_t value = contrast;
+     return AddSetParmEntryToBatch(m_pParamBuf,
+@@ -4252,7 +4252,7 @@ int32_t QCameraParameters::setSceneDetect(const char *sceneDetect)
+                                    sizeof(ON_OFF_MODES_MAP)/sizeof(QCameraMap),
+                                    sceneDetect);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting Scene Detect %s", __func__, sceneDetect);
++            ALOGV("%s: Setting Scene Detect %s", __func__, sceneDetect);
+             updateParamEntry(KEY_QC_SCENE_DETECT, sceneDetect);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_ASD_ENABLE,
+@@ -4427,7 +4427,7 @@ int32_t  QCameraParameters::setISOValue(const char *isoValue)
+                                    sizeof(ISO_MODES_MAP)/sizeof(QCameraMap),
+                                    isoValue);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting ISO value %s", __func__, isoValue);
++            ALOGV("%s: Setting ISO value %s", __func__, isoValue);
+             updateParamEntry(KEY_QC_ISO_MODE, isoValue);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_ISO,
+@@ -4459,7 +4459,7 @@ int32_t QCameraParameters::setFlash(const char *flashStr)
+                                    sizeof(FLASH_MODES_MAP)/sizeof(QCameraMap),
+                                    flashStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting Flash value %s", __func__, flashStr);
++            ALOGV("%s: Setting Flash value %s", __func__, flashStr);
+             updateParamEntry(KEY_FLASH_MODE, flashStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_LED_MODE,
+@@ -4490,7 +4490,7 @@ int32_t QCameraParameters::setAecLock(const char *aecLockStr)
+                                    sizeof(TRUE_FALSE_MODES_MAP)/sizeof(QCameraMap),
+                                    aecLockStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting AECLock value %s", __func__, aecLockStr);
++            ALOGV("%s: Setting AECLock value %s", __func__, aecLockStr);
+             updateParamEntry(KEY_AUTO_EXPOSURE_LOCK, aecLockStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_AEC_LOCK,
+@@ -4521,7 +4521,7 @@ int32_t QCameraParameters::setAwbLock(const char *awbLockStr)
+                                    sizeof(TRUE_FALSE_MODES_MAP)/sizeof(QCameraMap),
+                                    awbLockStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting AWBLock value %s", __func__, awbLockStr);
++            ALOGV("%s: Setting AWBLock value %s", __func__, awbLockStr);
+             updateParamEntry(KEY_AUTO_WHITEBALANCE_LOCK, awbLockStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_AWB_LOCK,
+@@ -4552,7 +4552,7 @@ int32_t QCameraParameters::setMCEValue(const char *mceStr)
+                                    sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
+                                    mceStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting AWBLock value %s", __func__, mceStr);
++            ALOGV("%s: Setting AWBLock value %s", __func__, mceStr);
+             updateParamEntry(KEY_QC_MEMORY_COLOR_ENHANCEMENT, mceStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_MCE,
+@@ -4618,7 +4618,7 @@ int32_t QCameraParameters::setTintlessValue(const char *tintStr)
+                                    sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
+                                    tintStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting Tintless value %s", __func__, tintStr);
++            ALOGV("%s: Setting Tintless value %s", __func__, tintStr);
+             updateParamEntry(KEY_QC_TINTLESS_ENABLE, tintStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_TINTLESS,
+@@ -4649,7 +4649,7 @@ int32_t QCameraParameters::setDISValue(const char *disStr)
+                                    sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
+                                    disStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting DIS value %s", __func__, disStr);
++            ALOGV("%s: Setting DIS value %s", __func__, disStr);
+             updateParamEntry(KEY_QC_DIS, disStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_DIS_ENABLE,
+@@ -4683,7 +4683,7 @@ int32_t QCameraParameters::setHighFrameRate(const char *hfrStr)
+             // HFR value changed, need to restart preview
+             m_bNeedRestart = true;
+             // Set HFR value
+-            ALOGD("%s: Setting HFR value %s", __func__, hfrStr);
++            ALOGV("%s: Setting HFR value %s", __func__, hfrStr);
+             updateParamEntry(KEY_QC_VIDEO_HIGH_FRAME_RATE, hfrStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_HFR,
+@@ -4714,7 +4714,7 @@ int32_t QCameraParameters::setLensShadeValue(const char *lensShadeStr)
+                                    sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap),
+                                    lensShadeStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting LensShade value %s", __func__, lensShadeStr);
++            ALOGV("%s: Setting LensShade value %s", __func__, lensShadeStr);
+             updateParamEntry(KEY_QC_LENSSHADE, lensShadeStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_ROLLOFF,
+@@ -4772,7 +4772,7 @@ int32_t QCameraParameters::setWhiteBalance(const char *wbStr)
+                                    sizeof(WHITE_BALANCE_MODES_MAP)/sizeof(QCameraMap),
+                                    wbStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting WhiteBalance value %s", __func__, wbStr);
++            ALOGV("%s: Setting WhiteBalance value %s", __func__, wbStr);
+             updateParamEntry(KEY_WHITE_BALANCE, wbStr);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_WHITE_BALANCE,
+@@ -4816,7 +4816,7 @@ int32_t QCameraParameters::setAntibanding(const char *antiBandingStr)
+                                    sizeof(ANTIBANDING_MODES_MAP)/sizeof(QCameraMap),
+                                    antiBandingStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGD("%s: Setting AntiBanding value %s", __func__, antiBandingStr);
++            ALOGV("%s: Setting AntiBanding value %s", __func__, antiBandingStr);
+             updateParamEntry(KEY_ANTIBANDING, antiBandingStr);
+             if(value == CAM_ANTIBANDING_MODE_AUTO) {
+                value = getAutoFlickerMode();
+@@ -5279,7 +5279,7 @@ int32_t QCameraParameters::setWaveletDenoise(const char *wnrStr)
+             if (m_bWNROn) {
+                 temp.process_plates = getWaveletDenoiseProcessPlate();
+             }
+-            ALOGI("%s: Denoise enable=%d, plates=%d",
++            ALOGV("%s: Denoise enable=%d, plates=%d",
+                   __func__, temp.denoise_enable, temp.process_plates);
+             return AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_WAVELET_DENOISE,
+@@ -5564,7 +5564,7 @@ int QCameraParameters::getFlipMode(cam_stream_type_t type)
+         str = get(KEY_QC_SNAPSHOT_PICTURE_FLIP);
+         break;
+     default:
+-        ALOGI("%s: No flip mode for stream type %d", __func__, type);
++        ALOGV("%s: No flip mode for stream type %d", __func__, type);
+         break;
+     }
+ 
+@@ -5576,7 +5576,7 @@ int QCameraParameters::getFlipMode(cam_stream_type_t type)
+             flipMode = value;
+         }
+ 
+-    ALOGD("%s: the filp mode of stream type %d is %d .", __func__, type, flipMode);
++    ALOGV("%s: the filp mode of stream type %d is %d .", __func__, type, flipMode);
+     return flipMode;
+ }
+ 
+@@ -5790,7 +5790,7 @@ int QCameraParameters::getMaxUnmatchedFramesInQueue()
+  *==========================================================================*/
+ int QCameraParameters::setRecordingHintValue(int32_t value)
+ {
+-    ALOGD("%s: VideoHint = %d", __func__, value);
++    ALOGV("%s: VideoHint = %d", __func__, value);
+     bool newValue = (value > 0)? true : false;
+ 
+     if ( m_bRecordingHint != newValue ) {
+@@ -6311,7 +6311,7 @@ int32_t QCameraParameters::updateRecordingHintValue(int32_t value)
+ int32_t QCameraParameters::setHistogram(bool enabled)
+ {
+     if(m_bHistogramEnabled == enabled) {
+-        ALOGD("%s: histogram flag not changed, no ops here", __func__);
++        ALOGV("%s: histogram flag not changed, no ops here", __func__);
+         return NO_ERROR;
+     }
+ 
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index a08568b..4a12065 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -1441,7 +1441,7 @@ void *QCameraPostProcessor::dataSaveRoutine(void *data)
+     QCameraCmdThread *cmdThread = &pme->m_saveProcTh;
+     char saveName[PROPERTY_VALUE_MAX];
+ 
+-    ALOGD("%s: E", __func__);
++    ALOGV("%s: E", __func__);
+     do {
+         do {
+             ret = cam_sem_wait(&cmdThread->cmd_sem);
+@@ -1456,12 +1456,12 @@ void *QCameraPostProcessor::dataSaveRoutine(void *data)
+         camera_cmd_type_t cmd = cmdThread->getCmd();
+         switch (cmd) {
+         case CAMERA_CMD_TYPE_START_DATA_PROC:
+-            ALOGD("%s: start data proc", __func__);
++            ALOGV("%s: start data proc", __func__);
+             is_active = TRUE;
+             break;
+         case CAMERA_CMD_TYPE_STOP_DATA_PROC:
+             {
+-                ALOGD("%s: stop data proc", __func__);
++                ALOGV("%s: stop data proc", __func__);
+                 is_active = FALSE;
+ 
+                 // flush input save Queue
+@@ -1549,14 +1549,14 @@ end:
+             }
+             break;
+         case CAMERA_CMD_TYPE_EXIT:
+-            ALOGD("%s : save thread exit", __func__);
++            ALOGV("%s : save thread exit", __func__);
+             running = 0;
+             break;
+         default:
+             break;
+         }
+     } while (running);
+-    ALOGD("%s: X", __func__);
++    ALOGV("%s: X", __func__);
+     return NULL;
+ }
+ 
+@@ -1581,7 +1581,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+     QCameraPostProcessor *pme = (QCameraPostProcessor *)data;
+     QCameraCmdThread *cmdThread = &pme->m_dataProcTh;
+ 
+-    ALOGD("%s: E", __func__);
++    ALOGV("%s: E", __func__);
+     do {
+         do {
+             ret = cam_sem_wait(&cmdThread->cmd_sem);
+@@ -1596,7 +1596,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+         camera_cmd_type_t cmd = cmdThread->getCmd();
+         switch (cmd) {
+         case CAMERA_CMD_TYPE_START_DATA_PROC:
+-            ALOGD("%s: start data proc", __func__);
++            ALOGV("%s: start data proc", __func__);
+             is_active = TRUE;
+             needNewSess = TRUE;
+             pme->m_saveProcTh.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC,
+@@ -1605,7 +1605,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+             break;
+         case CAMERA_CMD_TYPE_STOP_DATA_PROC:
+             {
+-                ALOGD("%s: stop data proc", __func__);
++                ALOGV("%s: stop data proc", __func__);
+                 is_active = FALSE;
+ 
+                 pme->m_saveProcTh.sendCmd(CAMERA_CMD_TYPE_STOP_DATA_PROC,
+@@ -1666,7 +1666,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+             break;
+         case CAMERA_CMD_TYPE_DO_NEXT_JOB:
+             {
+-                ALOGD("%s: Do next job, active is %d", __func__, is_active);
++                ALOGV("%s: Do next job, active is %d", __func__, is_active);
+                 if (is_active == TRUE) {
+                     // check if there is any ongoing jpeg jobs
+                     if (pme->m_ongoingJpegQ.isEmpty()) {
+@@ -1772,7 +1772,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
+             break;
+         }
+     } while (running);
+-    ALOGD("%s: X", __func__);
++    ALOGV("%s: X", __func__);
+     return NULL;
+ }
+ 
+diff --git a/QCamera2/HAL/QCameraStream.cpp b/QCamera2/HAL/QCameraStream.cpp
+index 7d59127..fa38f67 100644
+--- a/QCamera2/HAL/QCameraStream.cpp
++++ b/QCamera2/HAL/QCameraStream.cpp
+@@ -397,12 +397,12 @@ int32_t QCameraStream::processZoomDone(preview_stream_ops_t *previewWindow,
+  *==========================================================================*/
+ int32_t QCameraStream::processDataNotify(mm_camera_super_buf_t *frame)
+ {
+-    ALOGI("%s:\n", __func__);
++    ALOGV("%s:\n", __func__);
+     if (m_bActive) {
+         mDataQ.enqueue((void *)frame);
+         return mProcTh.sendCmd(CAMERA_CMD_TYPE_DO_NEXT_JOB, FALSE, FALSE);
+     } else {
+-        ALOGD("%s: Stream thread is not active, no ops here", __func__);
++        ALOGV("%s: Stream thread is not active, no ops here", __func__);
+         bufDone(frame->bufs[0]->buf_idx);
+         free(frame);
+         return NO_ERROR;
+@@ -424,7 +424,7 @@ int32_t QCameraStream::processDataNotify(mm_camera_super_buf_t *frame)
+ void QCameraStream::dataNotifyCB(mm_camera_super_buf_t *recvd_frame,
+                                  void *userdata)
+ {
+-    ALOGI("%s:\n", __func__);
++    ALOGV("%s:\n", __func__);
+     QCameraStream* stream = (QCameraStream *)userdata;
+     if (stream == NULL ||
+         recvd_frame == NULL ||
+@@ -463,7 +463,7 @@ void *QCameraStream::dataProcRoutine(void *data)
+     QCameraStream *pme = (QCameraStream *)data;
+     QCameraCmdThread *cmdThread = &pme->mProcTh;
+ 
+-    ALOGI("%s: E", __func__);
++    ALOGV("%s: E", __func__);
+     do {
+         do {
+             ret = cam_sem_wait(&cmdThread->cmd_sem);
+@@ -479,7 +479,7 @@ void *QCameraStream::dataProcRoutine(void *data)
+         switch (cmd) {
+         case CAMERA_CMD_TYPE_DO_NEXT_JOB:
+             {
+-                ALOGD("%s: Do next job", __func__);
++                ALOGV("%s: Do next job", __func__);
+                 mm_camera_super_buf_t *frame =
+                     (mm_camera_super_buf_t *)pme->mDataQ.dequeue();
+                 if (NULL != frame) {
+@@ -494,7 +494,7 @@ void *QCameraStream::dataProcRoutine(void *data)
+             }
+             break;
+         case CAMERA_CMD_TYPE_EXIT:
+-            ALOGD("%s: Exit", __func__);
++            ALOGV("%s: Exit", __func__);
+             /* flush data buf queue */
+             pme->mDataQ.flush();
+             running = 0;
+@@ -503,7 +503,7 @@ void *QCameraStream::dataProcRoutine(void *data)
+             break;
+         }
+     } while (running);
+-    ALOGD("%s: X", __func__);
++    ALOGV("%s: X", __func__);
+     return NULL;
+ }
+ 
+-- 
+1.8.3.1
+

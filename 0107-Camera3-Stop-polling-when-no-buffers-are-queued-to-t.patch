@@ -1,0 +1,282 @@
+From 129c8998afaa6121a827732e7fa6ae53bd981f9d Mon Sep 17 00:00:00 2001
+From: Mansoor Aftab <maftab@codeaurora.org>
+Date: Tue, 17 Sep 2013 02:09:33 -0700
+Subject: [PATCH 107/176] Camera3: Stop polling when no buffers are queued to
+ the kernel
+
+Will stop polling stream device for incomming buffers
+if currently there are not queued buffers on that device.
+
+Will re-enable polling when queuing new buffer.
+
+Bug: 10577807
+CRs-Fixed: 573515
+Change-Id: I69fbb4139107ee21a834343fe039657ab298d769
+---
+ QCamera2/stack/mm-camera-interface/inc/mm_camera.h | 12 +++-
+ QCamera2/stack/mm-camera-interface/src/mm_camera.c |  5 +-
+ .../mm-camera-interface/src/mm_camera_stream.c     | 45 +++++++++++----
+ .../mm-camera-interface/src/mm_camera_thread.c     | 65 ++++++++++++++++++++--
+ 4 files changed, 108 insertions(+), 19 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+index d0e74fe..008c7db 100644
+--- a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
++++ b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -224,6 +224,8 @@ typedef struct mm_stream {
+     uint8_t is_bundled; /* flag if stream is bundled */
+ 
+     mm_camera_stream_mem_vtbl_t mem_vtbl; /* mem ops tbl */
++
++    int8_t queued_buffer_count;
+ } mm_stream_t;
+ 
+ /* mm_channel */
+@@ -393,6 +395,11 @@ typedef struct {
+     struct camera_info info[MM_CAMERA_MAX_NUM_SENSORS];
+ } mm_camera_ctrl_t;
+ 
++typedef enum {
++    mm_camera_async_call,
++    mm_camera_sync_call
++} mm_camera_call_type_t;
++
+ /**********************************************************************************
+ * external function declare
+ ***********************************************************************************/
+@@ -562,7 +569,8 @@ extern int32_t mm_camera_poll_thread_add_poll_fd(
+                                 void *userdata);
+ extern int32_t mm_camera_poll_thread_del_poll_fd(
+                                 mm_camera_poll_thread_t * poll_cb,
+-                                uint32_t handler);
++                                uint32_t handler,
++                                mm_camera_call_type_t);
+ extern int32_t mm_camera_cmd_thread_launch(
+                                 mm_camera_cmd_thread_t * cmd_thread,
+                                 mm_camera_cmd_cb_t cb,
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera.c b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+index f51fcc5..58f83e6 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -1426,7 +1426,8 @@ int32_t mm_camera_evt_sub(mm_camera_obj_t * my_obj,
+         }
+         /* remove evt fd from the polling thraed when unreg the last event */
+         rc = mm_camera_poll_thread_del_poll_fd(&my_obj->evt_poll_thread,
+-                                               my_obj->my_hdl);
++                                               my_obj->my_hdl,
++                                               mm_camera_sync_call);
+     } else {
+         rc = ioctl(my_obj->ctrl_fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+         if (rc < 0) {
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 0b77882..02d3c88 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -880,21 +880,14 @@ int32_t mm_stream_streamon(mm_stream_t *my_obj)
+ 
+     CDBG("%s: E, my_handle = 0x%x, fd = %d, state = %d",
+          __func__, my_obj->my_hdl, my_obj->fd, my_obj->state);
+-    /* Add fd to data poll thread */
+-    rc = mm_camera_poll_thread_add_poll_fd(&my_obj->ch_obj->poll_thread[0],
+-                                           my_obj->my_hdl,
+-                                           my_obj->fd,
+-                                           mm_stream_data_notify,
+-                                           (void*)my_obj);
+-    if (rc < 0) {
+-        return rc;
+-    }
++
+     rc = ioctl(my_obj->fd, VIDIOC_STREAMON, &buf_type);
+     if (rc < 0) {
+         CDBG_ERROR("%s: ioctl VIDIOC_STREAMON failed: rc=%d\n",
+                    __func__, rc);
+         /* remove fd from data poll thread in case of failure */
+-        mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0], my_obj->my_hdl);
++        mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0],
++            my_obj->my_hdl, mm_camera_sync_call);
+     }
+     CDBG("%s :X rc = %d",__func__,rc);
+     return rc;
+@@ -920,7 +913,8 @@ int32_t mm_stream_streamoff(mm_stream_t *my_obj)
+          __func__, my_obj->my_hdl, my_obj->fd, my_obj->state);
+ 
+     /* step1: remove fd from data poll thread */
+-    mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0], my_obj->my_hdl);
++    mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0],
++        my_obj->my_hdl, mm_camera_sync_call);
+ 
+     /* step2: stream off */
+     rc = ioctl(my_obj->fd, VIDIOC_STREAMOFF, &buf_type);
+@@ -967,6 +961,17 @@ int32_t mm_stream_read_msm_frame(mm_stream_t * my_obj,
+         CDBG_ERROR("%s: VIDIOC_DQBUF ioctl call failed (rc=%d)\n",
+                    __func__, rc);
+     } else {
++        pthread_mutex_lock(&my_obj->buf_lock);
++        my_obj->queued_buffer_count--;
++        if (my_obj->queued_buffer_count == 0) {
++            CDBG_HIGH("%s: Stoping poll on stream %p type :%d", __func__,
++                my_obj, my_obj->stream_info->stream_type);
++            mm_camera_poll_thread_del_poll_fd(&my_obj->ch_obj->poll_thread[0],
++                my_obj->my_hdl, mm_camera_async_call);
++            CDBG_HIGH("%s: Stopped poll on stream %p type :%d", __func__,
++                my_obj, my_obj->stream_info->stream_type);
++        }
++        pthread_mutex_unlock(&my_obj->buf_lock);
+         int8_t idx = vb.index;
+         buf_info->buf = &my_obj->buf[idx];
+         buf_info->frame_idx = vb.sequence;
+@@ -1178,6 +1183,24 @@ int32_t mm_stream_qbuf(mm_stream_t *my_obj, mm_camera_buf_def_t *buf)
+         CDBG_ERROR("%s: Cache invalidate op not added", __func__);
+     }
+ 
++    my_obj->queued_buffer_count++;
++    if (my_obj->queued_buffer_count == 1) {
++        /* Add fd to data poll thread */
++        CDBG_HIGH("%s: Starting poll on stream %p type :%d", __func__,
++            my_obj, my_obj->stream_info->stream_type);
++        rc = mm_camera_poll_thread_add_poll_fd(&my_obj->ch_obj->poll_thread[0],
++            my_obj->my_hdl,
++            my_obj->fd,
++            mm_stream_data_notify,
++            (void*)my_obj);
++        CDBG_HIGH("%s: Started poll on stream %p type :%d", __func__,
++            my_obj,my_obj->stream_info->stream_type);
++        if (rc < 0) {
++            ALOGE("%s: add poll fd error", __func__);
++            return rc;
++        }
++    }
++
+     rc = ioctl(my_obj->fd, VIDIOC_QBUF, &buffer);
+     CDBG("%s: qbuf idx:%d, rc:%d", __func__, buffer.index, rc);
+     return rc;
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+index 3e9f466..0040a5c 100755
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -43,6 +43,8 @@
+ typedef enum {
+     /* poll entries updated */
+     MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED,
++    /* poll entries updated asynchronous */
++    MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED_ASYNC,
+     /* exit */
+     MM_CAMERA_PIPE_CMD_EXIT,
+     /* max count */
+@@ -60,6 +62,52 @@ typedef struct {
+     mm_camera_event_t event;
+ } mm_camera_sig_evt_t;
+ 
++
++/*===========================================================================
++ * FUNCTION   : mm_camera_poll_sig_async
++ *
++ * DESCRIPTION: Asynchoronous call to send a command through pipe.
++ *
++ * PARAMETERS :
++ *   @poll_cb      : ptr to poll thread object
++ *   @cmd          : command to be sent
++ *
++ * RETURN     : int32_t type of status
++ *              0  -- success
++ *              -1 -- failure
++ *==========================================================================*/
++static int32_t mm_camera_poll_sig_async(mm_camera_poll_thread_t *poll_cb,
++                                        uint32_t cmd)
++{
++    /* send through pipe */
++    /* get the mutex */
++    mm_camera_sig_evt_t cmd_evt;
++    int len;
++
++    CDBG("%s: E cmd = %d", __func__,cmd);
++    memset(&cmd_evt, 0, sizeof(cmd_evt));
++    cmd_evt.cmd = cmd;
++    pthread_mutex_lock(&poll_cb->mutex);
++    /* reset the statue to false */
++    poll_cb->status = FALSE;
++
++    /* send cmd to worker */
++    len = write(poll_cb->pfds[1], &cmd_evt, sizeof(cmd_evt));
++    if (len < 1) {
++        CDBG_ERROR("%s: len = %d, errno = %d", __func__, len, errno);
++        /* Avoid waiting for the signal */
++        pthread_mutex_unlock(&poll_cb->mutex);
++        return 0;
++    }
++    CDBG("%s: begin IN mutex write done, len = %d", __func__, len);
++    pthread_mutex_unlock(&poll_cb->mutex);
++    CDBG("%s: X", __func__);
++    return 0;
++}
++
++
++
++
+ /*===========================================================================
+  * FUNCTION   : mm_camera_poll_sig
+  *
+@@ -164,6 +212,7 @@ static void mm_camera_poll_proc_pipe(mm_camera_poll_thread_t *poll_cb)
+          __func__, poll_cb->pfds[0], (int)read_len, (int)sizeof(cmd_evt), cmd_evt.cmd);
+     switch (cmd_evt.cmd) {
+     case MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED:
++    case MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED_ASYNC:
+         /* we always have index 0 for pipe read */
+         poll_cb->num_fds = 0;
+         poll_cb->poll_fds[poll_cb->num_fds].fd = poll_cb->pfds[0];
+@@ -198,7 +247,8 @@ static void mm_camera_poll_proc_pipe(mm_camera_poll_thread_t *poll_cb)
+                 }
+             }
+         }
+-        mm_camera_poll_sig_done(poll_cb);
++        if (cmd_evt.cmd != MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED_ASYNC)
++            mm_camera_poll_sig_done(poll_cb);
+         break;
+ 
+     case MM_CAMERA_PIPE_CMD_EXIT:
+@@ -365,7 +415,8 @@ int32_t mm_camera_poll_thread_add_poll_fd(mm_camera_poll_thread_t * poll_cb,
+  * RETURN     : none
+  *==========================================================================*/
+ int32_t mm_camera_poll_thread_del_poll_fd(mm_camera_poll_thread_t * poll_cb,
+-                                          uint32_t handler)
++                                          uint32_t handler,
++                                          mm_camera_call_type_t call_type)
+ {
+     int32_t rc = -1;
+     uint8_t idx = 0;
+@@ -386,7 +437,13 @@ int32_t mm_camera_poll_thread_del_poll_fd(mm_camera_poll_thread_t * poll_cb,
+         poll_cb->poll_entries[idx].notify_cb = NULL;
+ 
+         /* send poll entries updated signal to poll thread */
+-        rc = mm_camera_poll_sig(poll_cb, MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED);
++        if (call_type == mm_camera_sync_call ) {
++            rc = mm_camera_poll_sig(poll_cb,
++                MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED);
++        } else {
++            rc = mm_camera_poll_sig_async(poll_cb,
++                MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED_ASYNC);
++        }
+     } else {
+         CDBG_ERROR("%s: invalid handler %d (%d)",
+                    __func__, handler, idx);
+-- 
+1.8.3.1
+

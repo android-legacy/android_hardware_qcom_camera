@@ -1,0 +1,43 @@
+From 806cea4011eccefe3ffef9ec3cdcbc96df79a7dc Mon Sep 17 00:00:00 2001
+From: Suman Mukherjee <sumam@codeaurora.org>
+Date: Mon, 7 Apr 2014 12:59:40 +0530
+Subject: [PATCH 124/176] QCamera2: Set m_nFaceProcMask flag early in
+ setFaceDetection
+
+In setFaceDetection method, m_nFaceProcMask is getting set to
+faceProcMask at the end of the method. All batch method invocation
+will consume approx. 30-40ms time and due to that in ZSL mode,
+after disabling facedetection, FD circles were not getting cleared.
+Application level, it has posted a self message with 100ms delay
+to clear the screen. That caused, AF circle disappearance on 1'st tap.
+
+Change-Id: I41ce092da485e29ca2aca7f98cac65f25815b7f2
+CRs-Fixed: 638111
+---
+ QCamera2/HAL/QCameraParameters.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 2d6942f..8050b39 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -6761,6 +6761,8 @@ int32_t QCameraParameters::setFaceDetection(bool enabled)
+         return NO_ERROR;
+     }
+ 
++    m_nFaceProcMask = faceProcMask;
++
+     // set parm for face detection
+     int requested_faces = getInt(KEY_QC_MAX_NUM_REQUESTED_FACES);
+     cam_fd_set_parm_t fd_set_parm;
+@@ -6791,7 +6793,6 @@ int32_t QCameraParameters::setFaceDetection(bool enabled)
+         return rc;
+     }
+ 
+-    m_nFaceProcMask = faceProcMask;
+     ALOGD("%s: FaceProcMask -> %d", __func__, m_nFaceProcMask);
+ 
+     return rc;
+-- 
+1.8.3.1
+

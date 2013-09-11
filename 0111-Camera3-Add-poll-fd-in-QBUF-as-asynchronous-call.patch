@@ -1,0 +1,105 @@
+From 0b4f52885b491d5deafa5565c4c19da0e8c382e2 Mon Sep 17 00:00:00 2001
+From: Shuzhen Wang <shuzhenw@codeaurora.org>
+Date: Wed, 9 Oct 2013 13:40:32 -0700
+Subject: [PATCH 111/176] Camera3: Add poll fd in QBUF as asynchronous call
+
+Without this change, there is deadlock when both Data_notify and
+Qbuf are coming at same time i.e, data_notify is waiting for buf_lock
+mutex which acquired by qbuf and qbuf-> Add poll fd is waiting for
+data_notify to finish.
+
+Adding Poll fd in asynchronous way i.e, POLL FD need not to wait for
+data_notify cb's to finish.
+
+Bug: 10998587
+CRs-Fixed: 573515
+Change-Id: I574b25378639f5bc10b753af06b6d729261ee11d
+---
+ QCamera2/stack/mm-camera-interface/inc/mm_camera.h        |  3 ++-
+ QCamera2/stack/mm-camera-interface/src/mm_camera.c        |  3 ++-
+ QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c |  3 ++-
+ QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c | 12 ++++++++++--
+ 4 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+index 008c7db..7fccc0e 100644
+--- a/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
++++ b/QCamera2/stack/mm-camera-interface/inc/mm_camera.h
+@@ -566,7 +566,8 @@ extern int32_t mm_camera_poll_thread_add_poll_fd(
+                                 uint32_t handler,
+                                 int32_t fd,
+                                 mm_camera_poll_notify_t nofity_cb,
+-                                void *userdata);
++                                void *userdata,
++                                mm_camera_call_type_t);
+ extern int32_t mm_camera_poll_thread_del_poll_fd(
+                                 mm_camera_poll_thread_t * poll_cb,
+                                 uint32_t handler,
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera.c b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+index 58f83e6..6562ce7 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+@@ -1439,7 +1439,8 @@ int32_t mm_camera_evt_sub(mm_camera_obj_t * my_obj,
+                                                my_obj->my_hdl,
+                                                my_obj->ctrl_fd,
+                                                mm_camera_event_notify,
+-                                               (void*)my_obj);
++                                               (void*)my_obj,
++                                               mm_camera_sync_call);
+     }
+     return rc;
+ }
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 02d3c88..0139dd8 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1192,7 +1192,8 @@ int32_t mm_stream_qbuf(mm_stream_t *my_obj, mm_camera_buf_def_t *buf)
+             my_obj->my_hdl,
+             my_obj->fd,
+             mm_stream_data_notify,
+-            (void*)my_obj);
++            (void*)my_obj,
++            mm_camera_async_call);
+         CDBG_HIGH("%s: Started poll on stream %p type :%d", __func__,
+             my_obj,my_obj->stream_info->stream_type);
+         if (rc < 0) {
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+index 0040a5c..27a4a9d 100755
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_thread.c
+@@ -368,6 +368,7 @@ int32_t mm_camera_poll_thread_notify_entries_updated(mm_camera_poll_thread_t * p
+  *   @fd        : file descriptor need to be added into polling thread
+  *   @notify_cb : callback function to handle if any notify from fd
+  *   @userdata  : user data ptr
++ *   @call_type : Whether its Synchronous or Asynchronous call
+  *
+  * RETURN     : none
+  *==========================================================================*/
+@@ -375,7 +376,8 @@ int32_t mm_camera_poll_thread_add_poll_fd(mm_camera_poll_thread_t * poll_cb,
+                                           uint32_t handler,
+                                           int32_t fd,
+                                           mm_camera_poll_notify_t notify_cb,
+-                                          void* userdata)
++                                          void* userdata,
++                                          mm_camera_call_type_t call_type)
+ {
+     int32_t rc = -1;
+     uint8_t idx = 0;
+@@ -394,7 +396,13 @@ int32_t mm_camera_poll_thread_add_poll_fd(mm_camera_poll_thread_t * poll_cb,
+         poll_cb->poll_entries[idx].notify_cb = notify_cb;
+         poll_cb->poll_entries[idx].user_data = userdata;
+         /* send poll entries updated signal to poll thread */
+-        rc = mm_camera_poll_sig(poll_cb, MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED);
++        if (call_type == mm_camera_sync_call) {
++            rc = mm_camera_poll_sig(poll_cb,
++                MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED);
++        } else {
++            rc = mm_camera_poll_sig_async(poll_cb,
++                MM_CAMERA_PIPE_CMD_POLL_ENTRIES_UPDATED_ASYNC);
++        }
+     } else {
+         CDBG_ERROR("%s: invalid handler %d (%d)",
+                    __func__, handler, idx);
+-- 
+1.8.3.1
+

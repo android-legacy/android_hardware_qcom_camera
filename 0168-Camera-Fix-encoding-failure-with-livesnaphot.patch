@@ -1,0 +1,31 @@
+From eb4c03115a36440b8d795e1a0dc272f45ac435e8 Mon Sep 17 00:00:00 2001
+From: Lakshmi Narayana Kalavala <lkalaval@codeaurora.org>
+Date: Fri, 24 May 2013 13:16:27 -0700
+Subject: [PATCH 168/176] Camera: Fix encoding failure with livesnaphot
+
+Observed encoding failure with livesnapshot becos
+of improper crop values, hence memset the crop info
+to zero in initStream
+
+CRs-Fixed: 489990
+Change-Id: I7af1d6a1a47de078ea7096d968e8a49209cb99b7
+---
+ QCamera/HAL/core/src/QCameraStream.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/QCamera/HAL/core/src/QCameraStream.cpp b/QCamera/HAL/core/src/QCameraStream.cpp
+index 297af3a..e8a91db 100755
+--- a/QCamera/HAL/core/src/QCameraStream.cpp
++++ b/QCamera/HAL/core/src/QCameraStream.cpp
+@@ -144,6 +144,8 @@ status_t QCameraStream::initStream(uint8_t no_cb_needed, uint8_t stream_on)
+     /* save local copy */
+     m_flag_no_cb = no_cb_needed;
+     m_flag_stream_on = stream_on;
++    /* memset*/
++    memset(&mCrop, 0, sizeof(mm_camera_rect_t));
+ 
+     ALOGD("%s: E, mActive = %d, mInit = %d, streamid = %d, image_mode = %d",
+           __func__, mActive, mInit, mStreamId, mExtImgMode);
+-- 
+1.8.3.1
+

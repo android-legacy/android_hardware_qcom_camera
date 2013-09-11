@@ -1,0 +1,50 @@
+From 9f59879bf63f57762a682aeb49fb0da99adab31e Mon Sep 17 00:00:00 2001
+From: Chandan Gera <cgera@codeaurora.org>
+Date: Tue, 17 Sep 2013 14:17:26 +0530
+Subject: [PATCH 011/176] Camera: Initialize thermal daemon after openCamera is
+ successful
+
+Registering Callback with Thermal Daemon after OpenCamera is done.
+This will help the corner cases where device is already heated
+and camera has to handle thermal daemon callbacks.
+
+Change-Id: Ib82fd2d345aab6644f908b80954ac80697485d0f
+CRs-Fixed: 545458
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 4973cb4..6054245 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1026,8 +1026,12 @@ int QCamera2HardwareInterface::openCamera(struct hw_device_t **hw_device)
+     }
+     ALOGE("[KPI Perf] %s: E PROFILE_OPEN_CAMERA camera id %d", __func__,mCameraId);
+     rc = openCamera();
+-    if (rc == NO_ERROR)
++    if (rc == NO_ERROR){
+         *hw_device = &mCameraDevice.common;
++        if (m_thermalAdapter.init(this) != 0) {
++          ALOGE("Init thermal adapter failed");
++        }
++    }
+     else
+         *hw_device = NULL;
+     return rc;
+@@ -1101,12 +1105,6 @@ int QCamera2HardwareInterface::openCamera()
+     }
+ 
+     mParameters.init(gCamCapability[mCameraId], mCameraHandle, this);
+-
+-    rc = m_thermalAdapter.init(this);
+-    if (rc != 0) {
+-        ALOGE("Init thermal adapter failed");
+-    }
+-
+     mCameraOpened = true;
+ 
+     return NO_ERROR;
+-- 
+1.8.3.1
+

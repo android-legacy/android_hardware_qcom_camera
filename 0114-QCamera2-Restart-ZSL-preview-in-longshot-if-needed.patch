@@ -1,0 +1,148 @@
+From 56c887069184d2e9095b007306d84b4d2e061435 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 13 Jan 2014 12:32:57 +0200
+Subject: [PATCH 114/176] QCamera2: Restart ZSL preview in longshot if needed
+
+ Due to recent buffer count optimizations
+ ZSL might run with considerably less buffers
+ during longshot mode. Preview needs to
+ restart in this case so that the intended
+ number of buffers could get allocated.
+
+Conflicts:
+	QCamera2/HAL/QCameraStateMachine.h
+Change-Id: I251ab7fabff46dd9ff322167b3fdbd4a9f8f23ef
+---
+ QCamera2/HAL/QCamera2HWI.cpp         | 34 +++++++++++++++++++++++++++++++++-
+ QCamera2/HAL/QCamera2HWI.h           |  2 +-
+ QCamera2/HAL/QCameraStateMachine.cpp | 13 +++++++++++++
+ QCamera2/HAL/QCameraStateMachine.h   |  4 +++-
+ QCamera2/HAL/QCameraStream.h         |  2 ++
+ 5 files changed, 52 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 945b8cf..ca75743 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -2467,16 +2467,48 @@ int QCamera2HardwareInterface::putParameters(char *parms)
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int QCamera2HardwareInterface::sendCommand(int32_t command, int32_t /*arg1*/, int32_t /*arg2*/)
++int QCamera2HardwareInterface::sendCommand(int32_t command,
++        int32_t &arg1, int32_t &/*arg2*/)
+ {
+     int rc = NO_ERROR;
+ 
+     switch (command) {
+     case CAMERA_CMD_LONGSHOT_ON:
++        arg1 = 0;
+         // Longshot can only be enabled when image capture
+         // is not active.
+         if ( !m_stateMachine.isCaptureRunning() ) {
+             mLongshotEnabled = true;
++
++            // Due to recent buffer count optimizations
++            // ZSL might run with considerably less buffers
++            // when not in longshot mode. Preview needs to
++            // restart in this case.
++            if (isZSLMode() && m_stateMachine.isPreviewRunning()) {
++                QCameraChannel *pChannel = NULL;
++                QCameraStream *pSnapStream = NULL;
++                pChannel = m_channels[QCAMERA_CH_TYPE_ZSL];
++                if (NULL != pChannel) {
++                    QCameraStream *pStream = NULL;
++                    for(int i = 0; i < pChannel->getNumOfStreams(); i++) {
++                        pStream = pChannel->getStreamByIndex(i);
++                        if (pStream != NULL) {
++                            if (pStream->isTypeOf(CAM_STREAM_TYPE_SNAPSHOT)) {
++                                pSnapStream = pStream;
++                                break;
++                            }
++                        }
++                    }
++                    if (NULL != pSnapStream) {
++                        uint8_t required = 0;
++                        required = getBufNumRequired(CAM_STREAM_TYPE_SNAPSHOT);
++                        if (pSnapStream->getBufferCount() < required) {
++                            arg1 = QCAMERA_SM_EVT_RESTART_PERVIEW;
++                        }
++                    }
++                }
++            }
++            //
+         } else {
+             rc = NO_INIT;
+         }
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index c553ffe..f5bcd42 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -277,7 +277,7 @@ private:
+     int cancelLiveSnapshot();
+     char* getParameters();
+     int putParameters(char *);
+-    int sendCommand(int32_t cmd, int32_t arg1, int32_t arg2);
++    int sendCommand(int32_t cmd, int32_t &arg1, int32_t &arg2);
+     int release();
+     int dump(int fd);
+     int registerFaceImage(void *img_ptr,
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index d5df980..00efac4 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -1157,6 +1157,19 @@ int32_t QCameraStateMachine::procEvtPreviewingState(qcamera_sm_evt_enum_t evt,
+             rc = m_parent->sendCommand(cmd_payload->cmd,
+                                        cmd_payload->arg1,
+                                        cmd_payload->arg2);
++            if (CAMERA_CMD_LONGSHOT_ON == cmd_payload->cmd) {
++                if (QCAMERA_SM_EVT_RESTART_PERVIEW == cmd_payload->arg1) {
++                    m_parent->stopPreview();
++                    // start preview again
++                    rc = m_parent->preparePreview();
++                    if (rc == NO_ERROR) {
++                        rc = m_parent->startPreview();
++                        if (rc != NO_ERROR) {
++                            m_parent->unpreparePreview();
++                        }
++                    }
++                }
++            }
+             result.status = rc;
+             result.request_api = evt;
+             result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+diff --git a/QCamera2/HAL/QCameraStateMachine.h b/QCamera2/HAL/QCameraStateMachine.h
+index 63c59ff..adce772 100644
+--- a/QCamera2/HAL/QCameraStateMachine.h
++++ b/QCamera2/HAL/QCameraStateMachine.h
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundataion. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundataion. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -85,6 +85,8 @@ typedef enum {
+     QCAMERA_SM_EVT_JPEG_EVT_NOTIFY,          // evt notify from jpeg
+     QCAMERA_SM_EVT_SNAPSHOT_DONE,            // internal evt that snapshot is done
+     QCAMERA_SM_EVT_THERMAL_NOTIFY,           // evt notify from thermal daemon
++    QCAMERA_SM_EVT_STOP_CAPTURE_CHANNEL,     // stop capture channel
++    QCAMERA_SM_EVT_RESTART_PERVIEW,          // internal preview restart
+     QCAMERA_SM_EVT_MAX
+ } qcamera_sm_evt_enum_t;
+ 
+diff --git a/QCamera2/HAL/QCameraStream.h b/QCamera2/HAL/QCameraStream.h
+index c878e7f..5a7162e 100644
+--- a/QCamera2/HAL/QCameraStream.h
++++ b/QCamera2/HAL/QCameraStream.h
+@@ -92,6 +92,8 @@ public:
+ 
+     static void releaseFrameData(void *data, void *user_data);
+ 
++    uint8_t getBufferCount() { return mNumBufs; }
++
+     int mDumpFrame;
+     int mDumpMetaFrame;
+     int mDumpSkipCnt;
+-- 
+1.8.3.1
+

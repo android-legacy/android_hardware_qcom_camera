@@ -1,0 +1,64 @@
+From bd7e3f320811f627d732f752ece557880e0a9684 Mon Sep 17 00:00:00 2001
+From: Lokesh Kumar Aakulu <lkumar@codeaurora.org>
+Date: Sat, 16 Nov 2013 18:10:08 +0530
+Subject: [PATCH 059/176] mm-camera-test: Add Auto Focus Done Call Back support
+
+Add Auto Focus done Call back support and make application
+to wait till Auto Focus is done. and then issue Snapshot.
+
+CRs-Fixed: 575459
+
+Change-Id: I360b034b7f407baca3082ea8e0f53b5c895ec0a7
+---
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c     |  3 ++-
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_preview.c | 13 +++++++++++++
+ 2 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index 21d518a..21e9e3f 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -2336,7 +2336,8 @@ int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
+                 CDBG_ERROR("%s:autofocus error\n", __func__);
+                 goto EXIT;
+             }
+-
++            /*Waiting for Auto Focus Done Call Back*/
++            mm_camera_app_wait();
+             break;
+ 
+         case MM_CAMERA_LIB_CANCEL_AF:
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_preview.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_preview.c
+index 7a2e750..b8a0115 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_preview.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_preview.c
+@@ -41,6 +41,8 @@ static void mm_app_metadata_notify_cb(mm_camera_super_buf_t *bufs,
+   mm_camera_stream_t *p_stream = NULL;
+   mm_camera_test_obj_t *pme = (mm_camera_test_obj_t *)user_data;
+   mm_camera_buf_def_t *frame = bufs->bufs[0];
++  cam_metadata_info_t *pMetadata;
++  cam_auto_focus_data_t *focus_data;
+ 
+   /* find channel */
+   for (i = 0; i < MM_CHANNEL_TYPE_MAX; i++) {
+@@ -70,6 +72,17 @@ static void mm_app_metadata_notify_cb(mm_camera_super_buf_t *bufs,
+   }
+   pme->metadata = frame->buffer;
+ 
++  pMetadata = (cam_metadata_info_t *)frame->buffer;
++
++  if (pMetadata->is_focus_valid) {
++    focus_data = (cam_auto_focus_data_t *)&(pMetadata->focus_data);
++
++    if (focus_data->focus_state == CAM_AF_FOCUSED) {
++      CDBG_ERROR("%s: AutoFocus Done Call Back Received\n",__func__);
++      mm_camera_app_done();
++    }
++  }
++
+   if (MM_CAMERA_OK != pme->cam->ops->qbuf(bufs->camera_handle,
+                                           bufs->ch_id,
+                                           frame)) {
+-- 
+1.8.3.1
+

@@ -1,0 +1,38 @@
+From 4cc847d46b7a3ca33aa18973bf88e46d610e51e1 Mon Sep 17 00:00:00 2001
+From: Ivan Evlogiev <ivanevlogiev@codeaurora.org>
+Date: Fri, 18 Oct 2013 10:20:02 -0700
+Subject: [PATCH 045/176] QCamera2: Fix postview stride and scanline
+
+- Postview stride and scanline need to have 64 byte padding.
+The reason is that CPP rotation used in reprocessing stream
+has this 64 byte limitation for input image
+
+Change-Id: If84e778ea1107580f5e1cf50c9b101f226c55526
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index caf91d4..8d4fde2 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -2667,11 +2667,15 @@ int32_t mm_stream_calc_offset(mm_stream_t *my_obj)
+ 
+     switch (my_obj->stream_info->stream_type) {
+     case CAM_STREAM_TYPE_PREVIEW:
+-    case CAM_STREAM_TYPE_POSTVIEW:
+         rc = mm_stream_calc_offset_preview(my_obj->stream_info->fmt,
+                                            &dim,
+                                            &my_obj->stream_info->buf_planes);
+         break;
++    case CAM_STREAM_TYPE_POSTVIEW:
++      rc = mm_stream_calc_offset_post_view(my_obj->stream_info->fmt,
++                                         &dim,
++                                         &my_obj->stream_info->buf_planes);
++      break;
+     case CAM_STREAM_TYPE_SNAPSHOT:
+         rc = mm_stream_calc_offset_snapshot(my_obj->stream_info->fmt,
+                                             &dim,
+-- 
+1.8.3.1
+

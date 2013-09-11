@@ -1,0 +1,30 @@
+From 5956368694d21decc176436d392d010468f4f9e2 Mon Sep 17 00:00:00 2001
+From: chiz <chiz@codeaurora.org>
+Date: Fri, 21 Mar 2014 13:02:39 +0800
+Subject: [PATCH 125/176] QCamera2: Add preview ready state to isPreviewRunning
+ function
+
+When enable/disable torch camera, need to see if preview is
+running. When preview is ready, torch camera should not be
+prepared or released. So add preview ready state in isPreviewRunning
+
+Change-Id: I2fa5a2ee95c87bbbb99531de962c198fa2fadbca
+---
+ QCamera2/HAL/QCameraStateMachine.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index 00efac4..8e11368 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -2831,6 +2831,7 @@ bool QCameraStateMachine::isPreviewRunning()
+     case QCAMERA_SM_STATE_VIDEO_PIC_TAKING:
+     case QCAMERA_SM_STATE_PREVIEW_PIC_TAKING:
+     case QCAMERA_SM_STATE_PREPARE_SNAPSHOT:
++    case QCAMERA_SM_STATE_PREVIEW_READY:
+         return true;
+     default:
+         return false;
+-- 
+1.8.3.1
+

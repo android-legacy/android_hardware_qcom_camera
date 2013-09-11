@@ -1,0 +1,43 @@
+From d14585559c8264022054726d2edf1bfb9034abb5 Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Thu, 12 Dec 2013 13:13:12 +0200
+Subject: [PATCH 077/176] QCamera2: Fix ordering of burst snapshots
+
+Fixes the ordering of burst mode snapshots.
+
+Change-Id: Ia88568ca9f48638a4e5891b6cb4c771e2ecc36ea
+---
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_queue.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_queue.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_queue.c
+index dcf1343..ff289b3 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_queue.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_queue.c
+@@ -62,7 +62,9 @@ int32_t mm_jpeg_queue_enq(mm_jpeg_queue_t* queue, void* data)
+ 
+ int32_t mm_jpeg_queue_enq_head(mm_jpeg_queue_t* queue, void* data)
+ {
+-    mm_jpeg_q_node_t* node =
++  struct cam_list *head = NULL;
++  struct cam_list *pos = NULL;
++  mm_jpeg_q_node_t* node =
+         (mm_jpeg_q_node_t *)malloc(sizeof(mm_jpeg_q_node_t));
+     if (NULL == node) {
+         CDBG_ERROR("%s: No memory for mm_jpeg_q_node_t", __func__);
+@@ -72,8 +74,11 @@ int32_t mm_jpeg_queue_enq_head(mm_jpeg_queue_t* queue, void* data)
+     memset(node, 0, sizeof(mm_jpeg_q_node_t));
+     node->data = data;
+ 
++    head = &queue->head.list;
++    pos = head->next;
++
+     pthread_mutex_lock(&queue->lock);
+-    cam_list_insert_before_node(&node->list, &queue->head.list);
++    cam_list_insert_before_node(&node->list, pos);
+     queue->size++;
+     pthread_mutex_unlock(&queue->lock);
+ 
+-- 
+1.8.3.1
+

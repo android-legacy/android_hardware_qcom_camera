@@ -1,0 +1,29 @@
+From aa5cc58f65b023465ee3e9899873421c2c229758 Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Mon, 14 Oct 2013 18:55:25 +0300
+Subject: [PATCH 041/176] QCamera2: Fix problem with cached ion buffer
+ invalidate
+
+Call the ioctl on the correct device fd.
+
+Change-Id: Iae4ac0fa7d141faf794a19c88fc7fa5e091b3e77
+---
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
+index 5d9da19..d4efc14 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
+@@ -155,7 +155,7 @@ int buffer_invalidate(buffer_t *p_buffer)
+   custom_data.cmd = ION_IOC_INV_CACHES;
+   custom_data.arg = (unsigned long)&cache_inv_data;
+ 
+-  lrc = ioctl(p_buffer->ion_info_fd.fd, ION_IOC_CUSTOM, &custom_data);
++  lrc = ioctl(p_buffer->ion_fd, ION_IOC_CUSTOM, &custom_data);
+   if (lrc < 0)
+     CDBG_ERROR("%s: Cache Invalidate failed: %s\n", __func__, strerror(errno));
+ 
+-- 
+1.8.3.1
+

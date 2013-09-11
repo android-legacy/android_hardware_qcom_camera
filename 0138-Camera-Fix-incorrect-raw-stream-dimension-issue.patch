@@ -1,0 +1,60 @@
+From 998b13c478bf274d0cb0f56148b34699449292e0 Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Wed, 7 May 2014 16:37:09 +0530
+Subject: [PATCH 138/176] Camera : Fix incorrect raw stream dimension issue.
+
+initBatchUpdate has to be made before querying raw
+dimension from backend. Otherwise, junk values will
+be used to configure raw stream .
+
+Change-Id: I2246e3dd395ac140f57e831eec0dfa602269322a
+---
+ QCamera2/HAL/QCamera2HWI.cpp       |  3 +++
+ QCamera2/HAL/QCameraParameters.cpp | 10 ++++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 393ec02..921f384 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -3279,6 +3279,9 @@ int32_t QCamera2HardwareInterface::prepareRawStream(QCameraChannel *curChannel)
+     for (int i = 0; i < curChannel->getNumOfStreams();i++) {
+         QCameraStream *pStream = curChannel->getStreamByIndex(i);
+         if (pStream != NULL) {
++            if (pStream->isTypeOf(CAM_STREAM_TYPE_METADATA)) {
++                continue;
++            }
+             pStream->getFrameDimension(str_dim);
+             if (str_dim.width > max_dim.width) {
+                 max_dim.width = str_dim.width;
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 6ba6627..b909fe4 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -6924,6 +6924,11 @@ int32_t QCameraParameters::updateRAW(cam_dimension_t max_dim)
+         max_dim = m_pCapability->raw_dim;
+     }
+ 
++    if (initBatchUpdate(m_pParamBuf) < 0 ) {
++        ALOGE("%s:Failed to initialize group update table", __func__);
++        return BAD_TYPE;
++    }
++
+     rc = AddSetParmEntryToBatch(m_pParamBuf,
+                                 CAM_INTF_PARM_MAX_DIMENSION,
+                                 sizeof(cam_dimension_t),
+@@ -6939,6 +6944,11 @@ int32_t QCameraParameters::updateRAW(cam_dimension_t max_dim)
+         return rc;
+     }
+ 
++    if (initBatchUpdate(m_pParamBuf) < 0 ) {
++        ALOGE("%s:Failed to initialize group update table", __func__);
++        return BAD_TYPE;
++    }
++
+     rc = AddGetParmEntryToBatch(m_pParamBuf,
+                                 CAM_INTF_PARM_RAW_DIMENSION);
+     if (rc != NO_ERROR) {
+-- 
+1.8.3.1
+

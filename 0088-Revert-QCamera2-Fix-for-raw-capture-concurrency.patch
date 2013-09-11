@@ -1,0 +1,116 @@
+From 61a7fa74d50aa69d593d3a6fc023b5f5efbda502 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 13 Jan 2014 23:46:24 -0800
+Subject: [PATCH 088/176] Revert "QCamera2: Fix for raw capture concurrency"
+
+This reverts commit 53e2800b1817781f3f84cfd07372efea81cdb2f7.
+---
+ QCamera2/HAL/QCamera2HWI.cpp     |  5 -----
+ QCamera2/HAL/QCameraPostProc.cpp | 26 +++++++++-----------------
+ QCamera2/HAL/QCameraPostProc.h   |  1 +
+ 3 files changed, 10 insertions(+), 22 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 83117ac..2e38f61 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -2245,10 +2245,6 @@ int QCamera2HardwareInterface::takePicture()
+                 return rc;
+             }
+         } else {
+-
+-            stopChannel(QCAMERA_CH_TYPE_PREVIEW);
+-            delChannel(QCAMERA_CH_TYPE_PREVIEW);
+-
+             rc = addRawChannel();
+             if (rc == NO_ERROR) {
+                 // start postprocessor
+@@ -3584,7 +3580,6 @@ int32_t QCamera2HardwareInterface::addRawChannel()
+         delete pChannel;
+         return rc;
+     }
+-    waitDefferedWork(mMetadataJob);
+ 
+     rc = addStreamToChannel(pChannel, CAM_STREAM_TYPE_RAW,
+                             raw_stream_cb_routine, this);
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index ac5e938..4de0a2b 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -74,6 +74,7 @@ QCameraPostProcessor::QCameraPostProcessor(QCamera2HardwareInterface *cam_ctrl)
+       m_inputJpegQ(releaseJpegData, this),
+       m_ongoingJpegQ(releaseJpegData, this),
+       m_inputRawQ(releaseRawData, this),
++      mRawBurstCount(0),
+       mSaveFrmCnt(0),
+       mUseSaveProc(false),
+       mUseJpegBurst(false),
+@@ -224,6 +225,7 @@ int32_t QCameraPostProcessor::start(QCameraChannel *pSrcChannel)
+ 
+     m_dataProcTh.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC, FALSE, FALSE);
+     m_parent->m_cbNotifier.startSnapshots();
++    mRawBurstCount = m_parent->numOfSnapshotsExpected();
+ 
+     // Create Jpeg session
+     if ( !m_parent->mParameters.getRecordingHintValue() &&
+@@ -1581,23 +1583,10 @@ int32_t QCameraPostProcessor::processRawImageImpl(mm_camera_super_buf_t *recvd_f
+     }
+ 
+     QCameraMemory *rawMemObj = (QCameraMemory *)frame->mem_info;
+-    bool zslChannelUsed = m_parent->isZSLMode() &&
+-            ( pChannel != m_pReprocChannel );
+     camera_memory_t *raw_mem = NULL;
+ 
+     if (rawMemObj != NULL) {
+-        if (zslChannelUsed) {
+-            raw_mem = rawMemObj->getMemory(frame->buf_idx, false);
+-        } else {
+-            raw_mem = m_parent->mGetMemory(frame->fd,
+-                                           frame->frame_len,
+-                                           1,
+-                                           m_parent->mCallbackCookie);
+-            if (NULL == raw_mem) {
+-                ALOGE("%s : Not enough memory for RAW cb ", __func__);
+-                return NO_MEMORY;
+-            }
+-        }
++        raw_mem = rawMemObj->getMemory(frame->buf_idx, false);
+     }
+ 
+     if (NULL != rawMemObj && NULL != raw_mem) {
+@@ -1632,14 +1621,17 @@ int32_t QCameraPostProcessor::processRawImageImpl(mm_camera_super_buf_t *recvd_f
+             m_parent->m_cbNotifier.notifyCallback(cbArg);
+         }
+ 
++        bool zslChannelUsed = m_parent->isZSLMode() && ( pChannel != m_pReprocChannel );
+         if ((m_parent->mDataCb != NULL) &&
+             m_parent->msgTypeEnabledWithLock(CAMERA_MSG_COMPRESSED_IMAGE) > 0) {
++            mRawBurstCount--;
+             qcamera_release_data_t release_data;
+             memset(&release_data, 0, sizeof(qcamera_release_data_t));
+-            if ( zslChannelUsed ) {
+-                release_data.frame = recvd_frame;
++            if ( ( 0 == mRawBurstCount ) && (!zslChannelUsed) ) {
++                release_data.streamBufs = rawMemObj;
++                pStream->acquireStreamBufs();
+             } else {
+-                release_data.data = raw_mem;
++                release_data.frame = recvd_frame;
+             }
+             rc = sendDataNotify(CAMERA_MSG_COMPRESSED_IMAGE,
+                                 raw_mem,
+diff --git a/QCamera2/HAL/QCameraPostProc.h b/QCamera2/HAL/QCameraPostProc.h
+index 3cdd67a..05fd3c0 100644
+--- a/QCamera2/HAL/QCameraPostProc.h
++++ b/QCamera2/HAL/QCameraPostProc.h
+@@ -178,6 +178,7 @@ private:
+     QCameraQueue m_inputSaveQ;          // input save job queue
+     QCameraCmdThread m_dataProcTh;      // thread for data processing
+     QCameraCmdThread m_saveProcTh;      // thread for storing buffers
++    uint32_t mRawBurstCount;            // current raw burst count
+     uint32_t mSaveFrmCnt;               // save frame counter
+     static const char *STORE_LOCATION;  // path for storing buffers
+     bool mUseSaveProc;                  // use store thread
+-- 
+1.8.3.1
+

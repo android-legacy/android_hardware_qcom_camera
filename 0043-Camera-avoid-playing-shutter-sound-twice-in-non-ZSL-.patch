@@ -1,0 +1,30 @@
+From e4d98a1fe478d15a6be3ea627d0e1962c8e5f0ac Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Sat, 26 Oct 2013 14:13:31 +0530
+Subject: [PATCH 043/176] Camera: avoid playing shutter sound twice in non ZSL
+ capture
+
+This scenario happens when reprocess
+is enabled in non ZSL capture.
+
+Change-Id: I5f366577d38f177847a42efaecbb926d245f0e81
+---
+ QCamera2/HAL/QCameraPostProc.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index aa1e209..41e719a 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -488,7 +488,7 @@ int32_t QCameraPostProcessor::processData(mm_camera_super_buf_t *frame)
+     }
+ 
+     if (m_parent->needReprocess()) {
+-        if ( !m_parent->isLongshotEnabled() ) {
++        if ( !m_parent->isLongshotEnabled() && !m_parent->m_stateMachine.isNonZSLCaptureRunning()) {
+             //play shutter sound
+             m_parent->playShutter();
+         }
+-- 
+1.8.3.1
+

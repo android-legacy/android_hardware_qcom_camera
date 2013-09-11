@@ -1,0 +1,52 @@
+From e2fd03bb468bb8c0d6fa0a12f41a2d7bd7dd4593 Mon Sep 17 00:00:00 2001
+From: Rajaram Gudivada <rajaramg@codeaurora.org>
+Date: Fri, 29 Nov 2013 17:07:52 +0530
+Subject: [PATCH 103/176] Camera HAL1.0: Buffer Optimization for single ZSL
+ snapshot
+
+Total ZSL snapshot buffers has reduced from 12 to 8.
+i.e, Unmatched count is removed and reprocess buffers has
+reduced to 1.
+
+Before this change:
+ZSL Snapshot Buffers = 8
+Reprocess buffers = 2
+JPEG Work buffer = 1
+JPEG O/P buffer = 1
+Total = 12
+
+With this change:
+ZSL Snapshot Buffers = 5
+Reprocess buffers = 1
+JPEG Work buffer = 1
+JPEG O/P buffer = 1
+Total = 8
+
+Change-Id: I13ed5000d81f66f43ab8530cc6f1a40ddf74d5f8
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ec36e55..1dd2b7b 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1436,7 +1436,14 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
+     case CAM_STREAM_TYPE_SNAPSHOT:
+         {
+             if (mParameters.isZSLMode() || mLongshotEnabled) {
+-                bufferCnt = zslQBuffers + minCircularBufNum;
++                if (minCaptureBuffers == 1 && !mLongshotEnabled) {
++                    // Single ZSL snapshot case
++                    bufferCnt = zslQBuffers + CAMERA_MIN_STREAMING_BUFFERS;
++                }
++                else {
++                    // ZSL Burst or Longshot case
++                    bufferCnt = zslQBuffers + minCircularBufNum;
++                }
+             } else {
+                 bufferCnt = minCaptureBuffers +
+                             mParameters.getNumOfExtraHDRInBufsIfNeeded() -
+-- 
+1.8.3.1
+

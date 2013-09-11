@@ -1,0 +1,107 @@
+From 4d92f38def004a00560b2ca7b46fa6870d5769ee Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Wed, 18 Sep 2013 18:32:47 -0700
+Subject: [PATCH 024/176] QCamera2: add mobicat parameter
+
+Add a setMobicat() method to allow proper enablement of mobicat feature.
+
+Change-Id: I5c2f02ce417d20016357241b38418afc10054aae
+---
+ QCamera2/HAL/QCameraParameters.cpp | 46 ++++++++++++++++++++++++++++++++++++++
+ QCamera2/HAL/QCameraParameters.h   |  2 ++
+ 2 files changed, 48 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index e7985e5..1b52b3d 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -3016,6 +3016,49 @@ int32_t QCameraParameters::setSnapshotFDReq(const QCameraParameters& params)
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : setMobicat
++ *
++ * DESCRIPTION: set Mobicat on/off.
++ *
++ * PARAMETERS :
++ *   @params  : user setting parameters
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int32_t QCameraParameters::setMobicat(const QCameraParameters& )
++{
++    char value [32];
++    property_get("persist.camera.mobicat", value, "0");
++    bool enableMobi = atoi(value) > 0 ? true : false;
++    int32_t ret = NO_ERROR;;
++
++    if (enableMobi) {
++        tune_cmd_t tune_cmd;
++        tune_cmd.type = 2;
++        tune_cmd.module = 0;
++        tune_cmd.value = 1;
++
++        ret = AddSetParmEntryToBatch(m_pParamBuf,
++                                CAM_INTF_PARM_SET_VFE_COMMAND,
++                                sizeof(tune_cmd_t),
++                                &tune_cmd);
++        if (NO_ERROR != ret) {
++            return ret;
++        }
++        tune_cmd.module = 0;
++
++        ret = AddSetParmEntryToBatch(m_pParamBuf,
++                                CAM_INTF_PARM_SET_PP_COMMAND,
++                                sizeof(tune_cmd_t),
++                                &tune_cmd);
++    }
++
++    return ret;
++}
++
++/*===========================================================================
+  * FUNCTION   : updateParameters
+  *
+  * DESCRIPTION: update parameters from user setting
+@@ -3098,6 +3141,7 @@ int32_t QCameraParameters::updateParameters(QCameraParameters& params,
+     // update live snapshot size after all other parameters are set
+     if ((rc = setLiveSnapshotSize(params)))             final_rc = rc;
+     if ((rc = setStatsDebugMask()))                     final_rc = rc;
++    if ((rc = setMobicat(params)))                      final_rc = rc;
+ 
+ UPDATE_PARAM_DONE:
+     needRestart = m_bNeedRestart;
+@@ -3910,6 +3954,8 @@ int32_t QCameraParameters::setPreviewFpsRange(int minFPS, int maxFPS)
+                                   &fps_range);
+ }
+ 
++
++
+ /*===========================================================================
+  * FUNCTION   : setAutoExposure
+  *
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index fb415d3..0687b8e 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -572,6 +572,7 @@ private:
+     int32_t setSnapshotFDReq(const QCameraParameters& );
+     int32_t setStatsDebugMask();
+     int32_t setTintlessValue(const QCameraParameters& params);
++    int32_t setMobicat(const QCameraParameters& params);
+ 
+     int32_t setAutoExposure(const char *autoExp);
+     int32_t setPreviewFpsRange(int minFPS,int maxFPS);
+@@ -606,6 +607,7 @@ private:
+     int32_t setFaceRecognition(const char *faceRecog, int maxFaces);
+     int32_t setTintlessValue(const char *tintStr);
+ 
++
+     int32_t parse_pair(const char *str, int *first, int *second,
+                        char delim, char **endptr);
+     void parseSizesList(const char *sizesStr, Vector<Size> &sizes);
+-- 
+1.8.3.1
+

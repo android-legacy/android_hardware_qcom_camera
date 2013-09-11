@@ -1,0 +1,34 @@
+From 5be6009ccc7eea6121853bc987f57c6004cae9f8 Mon Sep 17 00:00:00 2001
+From: Rajaram Gudivada <rajaramg@codeaurora.org>
+Date: Fri, 12 Apr 2013 15:01:39 +0530
+Subject: [PATCH 166/176] Camera: Process the Data even when Stream is in
+ Register state
+
+Sometimes Preview/Snapshot buffer is coming fast i.e,
+Data notify is coming before changing the stream state to
+MM_STREAM_STATE_ACTIVE_STREAM_ON
+
+Change-Id: Iabb758a1a824f496511f2160b3734a721021e161
+CRs-fixed: 468142
+---
+ QCamera/stack/mm-camera-interface/src/mm_camera_stream.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
+index 3070bd0..807777d 100755
+--- a/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -213,8 +213,8 @@ static void mm_stream_data_notify(void* user_data)
+          "image_mode = %d, fd = %d, state = %d",
+          __func__, my_obj->inst_hdl, my_obj->my_hdl,
+          my_obj->ext_image_mode, my_obj->fd, my_obj->state);
+-    if (MM_STREAM_STATE_ACTIVE_STREAM_ON != my_obj->state) {
+-        /* this Cb will only received in active_stream_on state
++    if (my_obj->state < MM_STREAM_STATE_REG) {
++        /* this Cb will only received in active_stream_on or Register state
+          * if not so, return here */
+         CDBG_ERROR("%s: ERROR!! Wrong state (%d) to receive data notify!",
+                    __func__, my_obj->state);
+-- 
+1.8.3.1
+

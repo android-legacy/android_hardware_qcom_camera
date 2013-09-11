@@ -1,0 +1,31 @@
+From 683207d80266143c17811401bc6053993fabb4eb Mon Sep 17 00:00:00 2001
+From: chiz <chiz@codeaurora.org>
+Date: Wed, 4 Dec 2013 15:25:42 +0800
+Subject: [PATCH 069/176] Camera: fix memory leak in camera hal
+
+Considerable memory leak was observered during switching camera.
+The gCamCapability should be only initialized once.
+
+Change-Id: I873910eb89a73bde1a80bdefc2294dfa129cc5ce
+---
+ QCamera2/HAL/QCamera2HWI.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 4d4a3ec..3f2b296 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1075,8 +1075,8 @@ int QCamera2HardwareInterface::openCamera()
+         ALOGE("camera_open failed.");
+         return UNKNOWN_ERROR;
+     }
+-
+-    initCapabilities(mCameraId,mCameraHandle);
++    if (NULL == gCamCapability[mCameraId])
++        initCapabilities(mCameraId,mCameraHandle);
+ 
+     mCameraHandle->ops->register_event_notify(mCameraHandle->camera_handle,
+                                               camEvtHandle,
+-- 
+1.8.3.1
+

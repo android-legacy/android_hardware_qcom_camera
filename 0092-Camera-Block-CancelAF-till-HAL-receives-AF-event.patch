@@ -1,0 +1,265 @@
+From 6589a94b00d5bced155f2bef32e9c2bec1150bd8 Mon Sep 17 00:00:00 2001
+From: Mukund Mittal <mukundm@codeaurora.org>
+Date: Fri, 17 Jan 2014 14:46:11 +0530
+Subject: [PATCH 092/176] Camera: Block CancelAF till HAL receives AF event.
+
+Focus distances should not be updated after CancelAF. But due
+to timing issues, sometimes we may receive AF event after
+Cancel AF is issued. This will result if testCancelAutoFocus
+CTS failure.
+To avoid such scenarios, make Cancel AF wait for the focus event
+if AF is in progress.
+Change-Id: Iba641487c8f31de2d118fbc7dc3ed040c9d34601
+---
+ QCamera2/HAL/QCamera2HWI.cpp         | 34 +++++++++++++++-
+ QCamera2/HAL/QCamera2HWI.h           |  1 +
+ QCamera2/HAL/QCameraStateMachine.cpp | 77 +++++++++++++++++++++++-------------
+ QCamera2/stack/common/cam_types.h    |  3 +-
+ 4 files changed, 85 insertions(+), 30 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index a93f8f2..a77eb58 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -951,7 +951,7 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+       m_bShutterSoundPlayed(false),
+       m_bPreviewStarted(false),
+       m_bRecordStarted(false),
+-      m_currentFocusState(CAM_AF_SCANNING),
++      m_currentFocusState(CAM_AF_NOT_FOCUSED),
+       m_pPowerModule(NULL),
+       mDumpFrmCnt(0),
+       mDumpSkipCnt(0),
+@@ -2084,6 +2084,7 @@ int QCamera2HardwareInterface::cancelAutoFocus()
+     case CAM_FOCUS_MODE_CONTINOUS_VIDEO:
+     case CAM_FOCUS_MODE_CONTINOUS_PICTURE:
+         rc = mCameraHandle->ops->cancel_auto_focus(mCameraHandle->camera_handle);
++        m_currentFocusState = CAM_AF_CANCELLED;
+         break;
+     case CAM_FOCUS_MODE_INFINITY:
+     case CAM_FOCUS_MODE_FIXED:
+@@ -2882,6 +2883,8 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+ {
+     int32_t ret = NO_ERROR;
+     ALOGD("%s: E",__func__);
++
++    cam_autofocus_state_t prevFocusState = m_currentFocusState;
+     m_currentFocusState = focus_data.focus_state;
+ 
+     cam_focus_mode_type focusMode = mParameters.getFocusMode();
+@@ -2898,6 +2901,15 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+         ret = sendEvtNotify(CAMERA_MSG_FOCUS,
+                             (focus_data.focus_state == CAM_AF_FOCUSED)? true : false,
+                             0);
++        if (CAM_AF_CANCELLED == prevFocusState) {
++            //Notify CancelAF API
++            qcamera_api_result_t result;
++            memset(&result, 0, sizeof(qcamera_api_result_t));
++            result.status = NO_ERROR;
++            result.request_api = QCAMERA_SM_EVT_STOP_AUTO_FOCUS;
++            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++            signalAPIResult(&result);
++        }
+         break;
+     case CAM_FOCUS_MODE_CONTINOUS_VIDEO:
+     case CAM_FOCUS_MODE_CONTINOUS_PICTURE:
+@@ -2921,6 +2933,7 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+         ALOGD("%s: no ops for autofocus event in focusmode %d", __func__, focusMode);
+         break;
+     }
++
+     ALOGD("%s: X",__func__);
+     return ret;
+ }
+@@ -4842,6 +4855,25 @@ bool QCamera2HardwareInterface::isCACEnabled()
+     return enableCAC == 1;
+ }
+ 
++ /*===========================================================================
++ * FUNCTION   : isAFRunning
++ *
++ * DESCRIPTION: if AF is in progress while in Auto/Macro focus modes
++ *
++ * PARAMETERS : none
++ *
++ * RETURN     : true: AF in progress
++ *              false: AF not in progress
++ *==========================================================================*/
++bool QCamera2HardwareInterface::isAFRunning()
++{
++    bool isAFInProgress = (m_currentFocusState == CAM_AF_SCANNING &&
++            (mParameters.getFocusMode() == CAM_FOCUS_MODE_AUTO ||
++            mParameters.getFocusMode() == CAM_FOCUS_MODE_MACRO));
++
++    return isAFInProgress;
++}
++
+ /*===========================================================================
+  * FUNCTION   : needReprocess
+  *
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index c3b4703..1b744e2 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -316,6 +316,7 @@ private:
+ 
+     bool needDebugFps();
+     bool isCACEnabled();
++    bool isAFRunning();
+     bool needReprocess();
+     bool needRotationReprocess();
+     bool needScaleReprocess();
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index ed68400..d109bbf 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -512,11 +512,14 @@ int32_t QCameraStateMachine::procEvtPreviewStoppedState(qcamera_sm_evt_enum_t ev
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_REG_FACE_IMAGE:
+@@ -777,11 +780,14 @@ int32_t QCameraStateMachine::procEvtPreviewReadyState(qcamera_sm_evt_enum_t evt,
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_SEND_COMMAND:
+@@ -1066,11 +1072,14 @@ int32_t QCameraStateMachine::procEvtPreviewingState(qcamera_sm_evt_enum_t evt,
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_START_RECORDING:
+@@ -1555,11 +1564,14 @@ int32_t QCameraStateMachine::procEvtPicTakingState(qcamera_sm_evt_enum_t evt,
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_SEND_COMMAND:
+@@ -1884,11 +1896,14 @@ int32_t QCameraStateMachine::procEvtRecordingState(qcamera_sm_evt_enum_t evt,
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_SEND_COMMAND:
+@@ -2231,11 +2246,14 @@ int32_t QCameraStateMachine::procEvtVideoPicTakingState(qcamera_sm_evt_enum_t ev
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_SEND_COMMAND:
+@@ -2568,11 +2586,14 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+         break;
+     case QCAMERA_SM_EVT_STOP_AUTO_FOCUS:
+         {
++            bool isAFRunning = m_parent->isAFRunning();
+             rc = m_parent->cancelAutoFocus();
+-            result.status = rc;
+-            result.request_api = evt;
+-            result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-            m_parent->signalAPIResult(&result);
++            if (!isAFRunning) {
++                result.status = rc;
++                result.request_api = evt;
++                result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
++                m_parent->signalAPIResult(&result);
++            }
+         }
+         break;
+     case QCAMERA_SM_EVT_SEND_COMMAND:
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 4297bb7..feb082f 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -732,7 +732,8 @@ typedef enum {
+ typedef enum {
+     CAM_AF_SCANNING,
+     CAM_AF_FOCUSED,
+-    CAM_AF_NOT_FOCUSED
++    CAM_AF_NOT_FOCUSED,
++    CAM_AF_CANCELLED
+ } cam_autofocus_state_t;
+ 
+ typedef struct {
+-- 
+1.8.3.1
+

@@ -1,0 +1,255 @@
+From e1ccb50dfa3c0989db89ace7e2e840cbc1dc3d05 Mon Sep 17 00:00:00 2001
+From: Shuzhen Wang <shuzhenw@codeaurora.org>
+Date: Sun, 27 Oct 2013 01:43:50 -0700
+Subject: [PATCH 062/176] Camera: HAL1: Remove AF state machine
+
+To make HAL1 logic consistent with HAL3, remove the AF state
+machine from HAL. AF algorithm would take care of the state
+machine logic.
+
+Change-Id: I9757ec6e6f7cadeca351ff3583ac757fe44881a3
+---
+ QCamera2/HAL/QCamera2HWI.cpp       | 82 +++++---------------------------------
+ QCamera2/HAL/QCameraParameters.cpp | 51 ------------------------
+ QCamera2/HAL/QCameraParameters.h   |  9 -----
+ 3 files changed, 11 insertions(+), 131 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index cf83e54..3b09098 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -2066,48 +2066,9 @@ int QCamera2HardwareInterface::autoFocus()
+     switch (focusMode) {
+     case CAM_FOCUS_MODE_AUTO:
+     case CAM_FOCUS_MODE_MACRO:
+-        {
+-            rc = mCameraHandle->ops->do_auto_focus(mCameraHandle->camera_handle);
+-            if (rc == NO_ERROR) {
+-                mParameters.setAFRunning(true);
+-            }
+-        }
+-        break;
+     case CAM_FOCUS_MODE_CONTINOUS_VIDEO:
+-        // According to Google API definition, the focus callback will immediately
+-        // return with a boolean that indicates whether the focus is sharp or not.
+-        // The focus position is locked after autoFocus call.
+-        // in this sense, the effect is the same as cancel_auto_focus
+-        {
+-            rc = mParameters.setLockCAF(true);
+-
+-            // send evt notify that foucs is done
+-            sendEvtNotify(CAMERA_MSG_FOCUS,
+-                          (m_currentFocusState == CAM_AF_FOCUSED)? true : false,
+-                          0);
+-        }
+-        break;
+     case CAM_FOCUS_MODE_CONTINOUS_PICTURE:
+-        // According to Google API definition, if the autofocus is in the middle
+-        // of scanning, the focus callback will return when it completes. If the
+-        // autofocus is not scanning, focus callback will immediately return with
+-        // a boolean that indicates whether the focus is sharp or not. The apps
+-        // can then decide if they want to take a picture immediately or to change
+-        // the focus mode to auto, and run a full autofocus cycle. The focus position
+-        // is locked after autoFocus call.
+-        if (m_currentFocusState != CAM_AF_SCANNING) {
+-            // lock focus
+-            rc = mParameters.setLockCAF(true);
+-
+-            // send evt notify that foucs is done
+-            sendEvtNotify(CAMERA_MSG_FOCUS,
+-                          (m_currentFocusState == CAM_AF_FOCUSED)? true : false,
+-                          0);
+-        } else {
+-            // set flag that lock CAF is needed once focus state becomes focsued/not focused
+-            mParameters.setLockCAFNeeded(true);
+-            rc = NO_ERROR;
+-        }
++        rc = mCameraHandle->ops->do_auto_focus(mCameraHandle->camera_handle);
+         break;
+     case CAM_FOCUS_MODE_INFINITY:
+     case CAM_FOCUS_MODE_FIXED:
+@@ -2139,20 +2100,9 @@ int QCamera2HardwareInterface::cancelAutoFocus()
+     switch (focusMode) {
+     case CAM_FOCUS_MODE_AUTO:
+     case CAM_FOCUS_MODE_MACRO:
+-        if (mParameters.isAFRunning()) {
+-            rc = mCameraHandle->ops->cancel_auto_focus(mCameraHandle->camera_handle);
+-            if (rc == NO_ERROR) {
+-                mParameters.setAFRunning(false);
+-            }
+-        }
+-        break;
+     case CAM_FOCUS_MODE_CONTINOUS_VIDEO:
+     case CAM_FOCUS_MODE_CONTINOUS_PICTURE:
+-        if (mParameters.isCAFLocked()) {
+-            // resume CAF by unlock CAF
+-            rc = mParameters.setLockCAF(false);;
+-            mParameters.setLockCAFNeeded(false);
+-        }
++        rc = mCameraHandle->ops->cancel_auto_focus(mCameraHandle->camera_handle);
+         break;
+     case CAM_FOCUS_MODE_INFINITY:
+     case CAM_FOCUS_MODE_FIXED:
+@@ -2903,22 +2853,16 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+     switch (focusMode) {
+     case CAM_FOCUS_MODE_AUTO:
+     case CAM_FOCUS_MODE_MACRO:
+-        if (mParameters.isAFRunning()) {
+-            if (focus_data.focus_state == CAM_AF_SCANNING) {
+-                // in the middle of focusing, just ignore it
+-                break;
+-            }
+-
+-            // update focus distance
+-            mParameters.updateFocusDistances(&focus_data.focus_dist);
+-            ret = sendEvtNotify(CAMERA_MSG_FOCUS,
+-                                (focus_data.focus_state == CAM_AF_FOCUSED)? true : false,
+-                                0);
+-            mParameters.setAFRunning(false);
+-        } else {
+-            ret = UNKNOWN_ERROR;
+-            ALOGE("%s: autoFocusEvent when no auto_focus running", __func__);
++        if (focus_data.focus_state == CAM_AF_SCANNING) {
++            // in the middle of focusing, just ignore it
++            break;
+         }
++
++        // update focus distance
++        mParameters.updateFocusDistances(&focus_data.focus_dist);
++        ret = sendEvtNotify(CAMERA_MSG_FOCUS,
++                            (focus_data.focus_state == CAM_AF_FOCUSED)? true : false,
++                            0);
+         break;
+     case CAM_FOCUS_MODE_CONTINOUS_VIDEO:
+     case CAM_FOCUS_MODE_CONTINOUS_PICTURE:
+@@ -2926,10 +2870,6 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+             focus_data.focus_state == CAM_AF_NOT_FOCUSED) {
+             // update focus distance
+             mParameters.updateFocusDistances(&focus_data.focus_dist);
+-            if (mParameters.isLockCAFNeeded()) {
+-                mParameters.setLockCAFNeeded(false);
+-                ret = mParameters.setLockCAF(true);
+-            }
+ 
+             ret = sendEvtNotify(CAMERA_MSG_FOCUS,
+                   (focus_data.focus_state == CAM_AF_FOCUSED)? true : false,
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 48924f1..5d2c720 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -565,9 +565,6 @@ QCameraParameters::QCameraParameters()
+       m_bNeedRestart(false),
+       m_bNoDisplayMode(false),
+       m_bWNROn(false),
+-      m_bNeedLockCAF(false),
+-      m_bCAFLocked(false),
+-      m_bAFRunning(false),
+       m_bInited(false),
+       m_nBurstNum(1),
+       m_bUpdateEffects(false),
+@@ -639,9 +636,6 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_bNeedRestart(false),
+     m_bNoDisplayMode(false),
+     m_bWNROn(false),
+-    m_bNeedLockCAF(false),
+-    m_bCAFLocked(false),
+-    m_bAFRunning(false),
+     m_bInited(false),
+     m_nBurstNum(1),
+     m_bPreviewFlipChanged(false),
+@@ -4312,11 +4306,6 @@ int32_t QCameraParameters::setFocusMode(const char *focusMode)
+             ALOGV("%s: Setting focus mode %s", __func__, focusMode);
+             mFocusMode = (cam_focus_mode_type)value;
+ 
+-            // reset need lock CAF flag
+-            m_bNeedLockCAF = false;
+-            m_bCAFLocked = false;
+-            m_bAFRunning = false;
+-
+             updateParamEntry(KEY_FOCUS_MODE, focusMode);
+             rc = AddSetParmEntryToBatch(m_pParamBuf,
+                                           CAM_INTF_PARM_FOCUS_MODE,
+@@ -6687,46 +6676,6 @@ int32_t QCameraParameters::setFaceDetection(bool enabled)
+ }
+ 
+ /*===========================================================================
+- * FUNCTION   : setLockCAF
+- *
+- * DESCRIPTION: Lock CAF
+- *
+- * PARAMETERS :
+- *   @bLock : if CAF needs to be locked
+- *
+- * RETURN     : int32_t type of status
+- *              NO_ERROR  -- success
+- *              none-zero failure code
+- *==========================================================================*/
+-int32_t QCameraParameters::setLockCAF(bool bLock)
+-{
+-    if(initBatchUpdate(m_pParamBuf) < 0 ) {
+-        ALOGE("%s:Failed to initialize group update table", __func__);
+-        return BAD_TYPE;
+-    }
+-    int32_t rc = NO_ERROR;
+-    int32_t value = bLock;
+-
+-    rc = AddSetParmEntryToBatch(m_pParamBuf,
+-                                CAM_INTF_PARM_LOCK_CAF,
+-                                sizeof(value),
+-                                &value);
+-    if (rc != NO_ERROR) {
+-        ALOGE("%s:Failed to update table", __func__);
+-        return rc;
+-    }
+-
+-    rc = commitSetBatch();
+-    if (rc != NO_ERROR) {
+-        ALOGE("%s:Failed to set lock CAF parm", __func__);
+-        return rc;
+-    } else {
+-        m_bCAFLocked = bLock;
+-        return NO_ERROR;
+-    }
+-}
+-
+-/*===========================================================================
+  * FUNCTION   : setFrameSkip
+  *
+  * DESCRIPTION: send ISP frame skip pattern to camera daemon
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 3651f12..9d6db6d 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -491,7 +491,6 @@ public:
+     bool isFaceDetectionEnabled() {return ((m_nFaceProcMask & CAM_FACE_PROCESS_MASK_DETECTION) != 0);};
+     int32_t setHistogram(bool enabled);
+     int32_t setFaceDetection(bool enabled);
+-    int32_t setLockCAF(bool bLock);
+     int32_t setFrameSkip(enum msm_vfe_frame_skip_pattern pattern);
+     qcamera_thermal_mode getThermalMode() {return m_ThermalMode;};
+     int32_t updateRecordingHintValue(int32_t value);
+@@ -515,11 +514,6 @@ public:
+     int getFlipMode(cam_stream_type_t streamType);
+     bool isSnapshotFDNeeded();
+ 
+-    void setLockCAFNeeded(bool bNeedflag) {m_bNeedLockCAF = bNeedflag;};
+-    bool isLockCAFNeeded() {return m_bNeedLockCAF;};
+-    bool isCAFLocked() {return m_bCAFLocked;};
+-    void setAFRunning(bool bflag) {m_bAFRunning = bflag;};
+-    bool isAFRunning() {return m_bAFRunning;};
+     bool isHDR1xFrameEnabled() {return m_bHDR1xFrameEnabled;}
+     bool isYUVFrameInfoNeeded();
+     const char*getFrameFmtString(cam_format_t fmt);
+@@ -712,9 +706,6 @@ private:
+     bool m_bNeedRestart;            // if preview needs restart after parameters updated
+     bool m_bNoDisplayMode;
+     bool m_bWNROn;
+-    bool m_bNeedLockCAF;
+-    bool m_bCAFLocked;
+-    bool m_bAFRunning;
+     bool m_bInited;
+     int m_nBurstNum;
+     cam_exp_bracketing_t m_AEBracketingClient;
+-- 
+1.8.3.1
+

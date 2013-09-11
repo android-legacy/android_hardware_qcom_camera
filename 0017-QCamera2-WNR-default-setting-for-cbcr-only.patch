@@ -1,0 +1,62 @@
+From d605a27a469a800307d32958a3b58405047ccfdd Mon Sep 17 00:00:00 2001
+From: Mohit Setia <msetia@codeaurora.org>
+Date: Thu, 5 Sep 2013 14:12:50 +0530
+Subject: [PATCH 017/176] QCamera2: WNR default setting for cbcr only
+
+WNR default setting for cbcr only.Uploading it again to the
+mainline.
+
+Change-Id: I9ac201ca5a6e4153f769ab7df7597c91d056d428
+---
+ QCamera2/HAL/QCameraParameters.cpp | 34 +++++++++++++++++++++-------------
+ 1 file changed, 21 insertions(+), 13 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index f258ecd..118546d 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -5064,20 +5064,28 @@ cam_denoise_process_type_t QCameraParameters::getWaveletDenoiseProcessPlate()
+ {
+     char prop[PROPERTY_VALUE_MAX];
+     memset(prop, 0, sizeof(prop));
+-    property_get("persist.denoise.process.plates", prop, "0");
+-    int processPlate = atoi(prop);
+-    switch(processPlate) {
+-    case 0:
+-        return CAM_WAVELET_DENOISE_YCBCR_PLANE;
+-    case 1:
+-        return CAM_WAVELET_DENOISE_CBCR_ONLY;
+-    case 2:
+-        return CAM_WAVELET_DENOISE_STREAMLINE_YCBCR;
+-    case 3:
+-        return CAM_WAVELET_DENOISE_STREAMLINED_CBCR;
+-    default:
+-        return CAM_WAVELET_DENOISE_STREAMLINE_YCBCR;
++    cam_denoise_process_type_t processPlate = CAM_WAVELET_DENOISE_CBCR_ONLY;
++    property_get("persist.denoise.process.plates", prop, "");
++    if (strlen(prop) > 0) {
++        switch(atoi(prop)) {
++        case 0:
++            processPlate = CAM_WAVELET_DENOISE_YCBCR_PLANE;
++            break;
++        case 1:
++            processPlate = CAM_WAVELET_DENOISE_CBCR_ONLY;
++            break;
++        case 2:
++            processPlate = CAM_WAVELET_DENOISE_STREAMLINE_YCBCR;
++            break;
++        case 3:
++            processPlate = CAM_WAVELET_DENOISE_STREAMLINED_CBCR;
++            break;
++        default:
++            processPlate = CAM_WAVELET_DENOISE_CBCR_ONLY;
++            break;
++        }
+     }
++    return processPlate;
+ }
+ 
+ /*===========================================================================
+-- 
+1.8.3.1
+

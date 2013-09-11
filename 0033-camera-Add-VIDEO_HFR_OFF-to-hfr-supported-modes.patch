@@ -1,0 +1,31 @@
+From 9dc5505a09512d09cb8349e3b385826e9ec766cd Mon Sep 17 00:00:00 2001
+From: yuyang <yuyang@codeaurora.org>
+Date: Thu, 10 Oct 2013 16:45:22 +0800
+Subject: [PATCH 033/176] camera: Add VIDEO_HFR_OFF to hfr supported modes
+
+As VIDEO_HFR__OFF is also a hfr mode, need add the mode
+to hfr supported modes.
+
+Change-Id: I6a4869afbb462b026f3c2395bdfb7286a47cc65e
+---
+ QCamera2/HAL/QCameraParameters.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index a768419..abfbb93 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -823,6 +823,10 @@ String8 QCameraParameters::createHfrValuesString(
+                 }
+             }
+     }
++    if (count > 0) {
++        str.append(",");
++    }
++    str.append(VIDEO_HFR_OFF);
+     return str;
+ }
+ 
+-- 
+1.8.3.1
+

@@ -1,0 +1,88 @@
+From 04ce4d77b12dfd1f74f208d82b8af8a83f417ca3 Mon Sep 17 00:00:00 2001
+From: Kerong Sui <ksui@codeaurora.org>
+Date: Fri, 6 Dec 2013 15:52:37 +0800
+Subject: [PATCH 074/176] mm-camera-test: do not start af job if auto focus is
+ not supported
+
+check auto focus capability before start AF jobs to avoid blocking
+snapshot due to wait for auto focus event forever
+
+Change-Id: I24a87e8a46ae941cc6ebb0db38304c2761750d12
+---
+ QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h |  1 +
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c | 25 +++++++++++++++++-----
+ 2 files changed, 21 insertions(+), 5 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+index b30b5ef..31addc5 100644
+--- a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
++++ b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+@@ -231,6 +231,7 @@ typedef struct {
+     uint32_t frame_count;
+     int encodeJpeg;
+     int zsl_enabled;
++    int8_t focus_supported;
+     prev_callback user_preview_cb;
+     parm_buffer_t *params_buffer;
+     USER_INPUT_DISPLAY_T preview_resolution;
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index 21e9e3f..33771d6 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -1970,6 +1970,7 @@ EXIT:
+ int mm_camera_lib_start_stream(mm_camera_lib_handle *handle)
+ {
+     int rc = MM_CAMERA_OK;
++    cam_capability_t camera_cap;
+ 
+     if ( NULL == handle ) {
+         CDBG_ERROR(" %s : Invalid handle", __func__);
+@@ -1995,12 +1996,24 @@ int mm_camera_lib_start_stream(mm_camera_lib_handle *handle)
+     }
+ 
+     // Configure focus mode after stream starts
++    rc = mm_camera_lib_get_caps(handle, &camera_cap);
++    if ( MM_CAMERA_OK != rc ) {
++      CDBG_ERROR("%s:mm_camera_lib_get_caps() err=%d\n", __func__, rc);
++      return -1;
++    }
++    if (camera_cap.supported_focus_modes_cnt == 1 &&
++      camera_cap.supported_focus_modes[0] == CAM_FOCUS_MODE_FIXED) {
++      CDBG("focus not supported");
++      handle->test_obj.focus_supported = 0;
++      handle->current_params.af_mode = CAM_FOCUS_MODE_FIXED;
++    } else {
++      handle->test_obj.focus_supported = 1;
++    }
+     rc = setFocusMode(&handle->test_obj, handle->current_params.af_mode);
+     if (rc != MM_CAMERA_OK) {
+       CDBG_ERROR("%s:autofocus error\n", __func__);
+       goto EXIT;
+     }
+-
+     handle->stream_running = 1;
+ 
+ EXIT:
+@@ -2331,13 +2344,15 @@ int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
+         }
+ 
+         case MM_CAMERA_LIB_DO_AF:
+-            rc = handle->test_obj.cam->ops->do_auto_focus(handle->test_obj.cam->camera_handle);
+-            if (rc != MM_CAMERA_OK) {
++            if (handle->test_obj.focus_supported) {
++              rc = handle->test_obj.cam->ops->do_auto_focus(handle->test_obj.cam->camera_handle);
++              if (rc != MM_CAMERA_OK) {
+                 CDBG_ERROR("%s:autofocus error\n", __func__);
+                 goto EXIT;
++              }
++              /*Waiting for Auto Focus Done Call Back*/
++              mm_camera_app_wait();
+             }
+-            /*Waiting for Auto Focus Done Call Back*/
+-            mm_camera_app_wait();
+             break;
+ 
+         case MM_CAMERA_LIB_CANCEL_AF:
+-- 
+1.8.3.1
+

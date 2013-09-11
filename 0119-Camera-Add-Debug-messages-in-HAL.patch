@@ -1,0 +1,351 @@
+From 7c7b6ef33e582a48ee727fd9789b49253db4aebe Mon Sep 17 00:00:00 2001
+From: satyavaraprasad yerramsetti <satyav@codeaurora.org>
+Date: Tue, 18 Mar 2014 12:20:55 +0530
+Subject: [PATCH 119/176] Camera:Add Debug messages in HAL
+
+Add debug message in HAL to help analyzing
+the logs from Monkey/stability runs .
+
+- In allocateStreamInfoBuf()  print
+  Stream type, Stream format and stream dimensions.
+- In enableMsgType() and disableMsgType()
+  Messages enabled and disabled during various
+  QCamerastatemachine state changes.
+- In mm_stream_qbuf() print Stream type,
+  buffer index and frame index.
+- In autoFocus() Focus mode, Focus state
+  and AF running or not.
+- Print requested resolution in setPreviewSize(),
+  setPictureSize(),setVideoSize() funcs.
+- Print modes like ZSL,FD,Histogram and Scenemode
+  Enabled/Disabled.
+- Add logic to dump YUV in capture_channel_cb_routine().
+
+Change-Id: I6f88ee28123222aa9359516610bc8d5e2b49acbd
+---
+ QCamera2/HAL/QCamera2HWI.cpp                       | 30 ++++++++++++++++++----
+ QCamera2/HAL/QCamera2HWICallbacks.cpp              | 17 ++++++++++++
+ QCamera2/HAL/QCameraParameters.cpp                 | 13 ++++++----
+ QCamera2/stack/mm-camera-interface/src/mm_camera.c |  1 +
+ .../mm-camera-interface/src/mm_camera_channel.c    |  4 ++-
+ .../mm-camera-interface/src/mm_camera_stream.c     |  5 +++-
+ 6 files changed, 58 insertions(+), 12 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ca75743..12953a5 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -656,6 +656,7 @@ int QCamera2HardwareInterface::cancel_picture(struct camera_device *device)
+         ALOGE("NULL camera device");
+         return BAD_VALUE;
+     }
++    ALOGE("[KPI Perf] %s: E PROFILE_CANCEL_PICTURE", __func__);
+     hw->lockAPI();
+     ret = hw->processAPI(QCAMERA_SM_EVT_CANCEL_PICTURE, NULL);
+     if (ret == NO_ERROR) {
+@@ -663,7 +664,7 @@ int QCamera2HardwareInterface::cancel_picture(struct camera_device *device)
+         ret = hw->m_apiResult.status;
+     }
+     hw->unlockAPI();
+-
++    ALOGD("[KPI Perf] %s: X", __func__);
+     return ret;
+ }
+ 
+@@ -1003,12 +1004,14 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+  *==========================================================================*/
+ QCamera2HardwareInterface::~QCamera2HardwareInterface()
+ {
++    ALOGD("%s: E", __func__);
+     closeCamera();
+     pthread_mutex_destroy(&m_lock);
+     pthread_cond_destroy(&m_cond);
+     pthread_mutex_destroy(&m_evtLock);
+     pthread_cond_destroy(&m_evtCond);
+     pthread_mutex_destroy(&m_parm_lock);
++    ALOGD("%s: X", __func__);
+ }
+ 
+ /*===========================================================================
+@@ -1193,7 +1196,7 @@ int QCamera2HardwareInterface::closeCamera()
+ {
+     int rc = NO_ERROR;
+     int i;
+-
++    ALOGD("%s: E", __func__);
+     if (!mCameraOpened) {
+         return NO_ERROR;
+     }
+@@ -1228,7 +1231,7 @@ int QCamera2HardwareInterface::closeCamera()
+ 
+     rc = mCameraHandle->ops->close_camera(mCameraHandle->camera_handle);
+     mCameraHandle = NULL;
+-
++    ALOGD("%s: X", __func__);
+     return rc;
+ }
+ 
+@@ -1683,6 +1686,9 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+     rc = mParameters.getStreamRotation(stream_type, streamInfo->pp_config, streamInfo->dim);
+     streamInfo->num_bufs = getBufNumRequired(stream_type);
+     streamInfo->streaming_mode = CAM_STREAMING_MODE_CONTINUOUS;
++    ALOGD("%s: stream_type %d, stream format %d,stream dimension %dx%d, num_bufs %d\n",
++           __func__, stream_type, streamInfo->fmt, streamInfo->dim.width,
++           streamInfo->dim.height, streamInfo->num_bufs);
+     switch (stream_type) {
+     case CAM_STREAM_TYPE_SNAPSHOT:
+     case CAM_STREAM_TYPE_RAW:
+@@ -1816,6 +1822,7 @@ int QCamera2HardwareInterface::setCallBacks(camera_notify_callback notify_cb,
+ int QCamera2HardwareInterface::enableMsgType(int32_t msg_type)
+ {
+     mMsgEnabled |= msg_type;
++    ALOGD("%s (0x%x) : mMsgEnabled = 0x%x", __func__, msg_type , mMsgEnabled );
+     return NO_ERROR;
+ }
+ 
+@@ -1834,6 +1841,7 @@ int QCamera2HardwareInterface::enableMsgType(int32_t msg_type)
+ int QCamera2HardwareInterface::disableMsgType(int32_t msg_type)
+ {
+     mMsgEnabled &= ~msg_type;
++    ALOGD("%s (0x%x) : mMsgEnabled = 0x%x", __func__, msg_type , mMsgEnabled );
+     return NO_ERROR;
+ }
+ 
+@@ -2000,8 +2008,9 @@ int QCamera2HardwareInterface::startRecording()
+  *==========================================================================*/
+ int QCamera2HardwareInterface::stopRecording()
+ {
+-    int rc = stopChannel(QCAMERA_CH_TYPE_VIDEO);
+     ALOGD("%s: E", __func__);
++    int rc = stopChannel(QCAMERA_CH_TYPE_VIDEO);
++
+ #ifdef HAS_MULTIMEDIA_HINTS
+     if (m_pPowerModule) {
+         if (m_pPowerModule->powerHint) {
+@@ -2052,6 +2061,8 @@ int QCamera2HardwareInterface::autoFocus()
+ {
+     int rc = NO_ERROR;
+     cam_focus_mode_type focusMode = mParameters.getFocusMode();
++    ALOGD("[AF_DBG] %s: focusMode=%d, m_currentFocusState=%d, m_bAFRunning=%d",
++          __func__, focusMode, m_currentFocusState, isAFRunning());
+ 
+     switch (focusMode) {
+     case CAM_FOCUS_MODE_AUTO:
+@@ -2478,6 +2489,7 @@ int QCamera2HardwareInterface::sendCommand(int32_t command,
+         // Longshot can only be enabled when image capture
+         // is not active.
+         if ( !m_stateMachine.isCaptureRunning() ) {
++            ALOGD("%s: Longshot Enabled", __func__);
+             mLongshotEnabled = true;
+ 
+             // Due to recent buffer count optimizations
+@@ -2518,15 +2530,20 @@ int QCamera2HardwareInterface::sendCommand(int32_t command,
+             cancelPicture();
+             processEvt(QCAMERA_SM_EVT_SNAPSHOT_DONE, NULL);
+         }
++        ALOGD("%s: Longshot Disabled", __func__);
+         mLongshotEnabled = false;
+         break;
+     case CAMERA_CMD_HISTOGRAM_ON:
+     case CAMERA_CMD_HISTOGRAM_OFF:
+         rc = setHistogram(command == CAMERA_CMD_HISTOGRAM_ON? true : false);
++        ALOGD("%s: Histogram -> %s", __func__,
++              mParameters.isHistogramEnabled() ? "Enabled" : "Disabled");
+         break;
+     case CAMERA_CMD_START_FACE_DETECTION:
+     case CAMERA_CMD_STOP_FACE_DETECTION:
+         rc = setFaceDetection(command == CAMERA_CMD_START_FACE_DETECTION? true : false);
++        ALOGD("%s: FaceDetection -> %s", __func__,
++              mParameters.isFaceDetectionEnabled() ? "Enabled" : "Disabled");
+         break;
+     case CAMERA_CMD_HISTOGRAM_SEND_DATA:
+     default:
+@@ -2875,6 +2892,9 @@ int32_t QCamera2HardwareInterface::processAutoFocusEvent(cam_auto_focus_data_t &
+     m_currentFocusState = focus_data.focus_state;
+ 
+     cam_focus_mode_type focusMode = mParameters.getFocusMode();
++    ALOGD("[AF_DBG] %s: focusMode=%d, m_currentFocusState=%d, m_bAFRunning=%d",
++         __func__, focusMode, m_currentFocusState, isAFRunning());
++
+     switch (focusMode) {
+     case CAM_FOCUS_MODE_AUTO:
+     case CAM_FOCUS_MODE_MACRO:
+@@ -4204,7 +4224,7 @@ void QCamera2HardwareInterface::playShutter(){
+          ALOGV("%s: shutter msg not enabled or NULL cb", __func__);
+          return;
+      }
+-
++     ALOGD("%s: CAMERA_MSG_SHUTTER ", __func__);
+      qcamera_callback_argm_t cbArg;
+      memset(&cbArg, 0, sizeof(qcamera_callback_argm_t));
+      cbArg.cb_type = QCAMERA_NOTIFY_CALLBACK;
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 0211a92..8172521 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -208,6 +208,7 @@ void QCamera2HardwareInterface::capture_channel_cb_routine(mm_camera_super_buf_t
+ {
+     char value[PROPERTY_VALUE_MAX];
+     ALOGE("[KPI Perf] %s: E PROFILE_YUV_CB_TO_HAL", __func__);
++    bool dump_yuv = false;
+     QCamera2HardwareInterface *pme = (QCamera2HardwareInterface *)userdata;
+     if (pme == NULL ||
+         pme->mCameraHandle == NULL ||
+@@ -233,6 +234,22 @@ void QCamera2HardwareInterface::capture_channel_cb_routine(mm_camera_super_buf_t
+     }
+     *frame = *recvd_frame;
+ 
++    // DUMP YUV before reprocess if needed
++    property_get("persist.camera.nonzsl.yuv", value, "0");
++    dump_yuv = atoi(value) > 0 ? true : false;
++    if ( dump_yuv ) {
++        for ( int i= 0 ; i < recvd_frame->num_bufs ; i++ ) {
++            if ( recvd_frame->bufs[i]->stream_type == CAM_STREAM_TYPE_SNAPSHOT ) {
++                mm_camera_buf_def_t * yuv_frame = recvd_frame->bufs[i];
++                QCameraStream *pStream = pChannel->getStreamByHandle(yuv_frame->stream_id);
++                if ( NULL != pStream ) {
++                    pme->dumpFrameToFile(pStream, yuv_frame, QCAMERA_DUMP_FRM_SNAPSHOT);
++                }
++                break;
++            }
++        }
++    }
++
+     property_get("persist.camera.dumpmetadata", value, "0");
+     int32_t enabled = atoi(value);
+     if (enabled) {
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 449920b..dce9858 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -1024,6 +1024,7 @@ int32_t QCameraParameters::setPreviewSize(const QCameraParameters& params)
+             }
+ 
+             // set the new value
++            ALOGD("%s: Requested preview size %d x %d", __func__, width, height);
+             CameraParameters::setPreviewSize(width, height);
+             return NO_ERROR;
+         }
+@@ -1064,6 +1065,7 @@ int32_t QCameraParameters::setPictureSize(const QCameraParameters& params)
+                 }
+ 
+                 // set the new value
++                ALOGD("%s: Requested picture size %d x %d", __func__, width, height);
+                 CameraParameters::setPictureSize(width, height);
+                 return NO_ERROR;
+             }
+@@ -1082,8 +1084,8 @@ int32_t QCameraParameters::setPictureSize(const QCameraParameters& params)
+             // set the new value
+             char val[32];
+             sprintf(val, "%dx%d", width, height);
++            ALOGD("%s: picture size requested %s", __func__, val);
+             updateParamEntry(KEY_PICTURE_SIZE, val);
+-            ALOGV("%s: %s", __func__, val);
+             return NO_ERROR;
+         }
+     }
+@@ -1116,7 +1118,6 @@ int32_t QCameraParameters::setVideoSize(const QCameraParameters& params)
+     } else {
+         params.getVideoSize(&width, &height);
+     }
+-
+     // Validate the video size
+     for (size_t i = 0; i < m_pCapability->video_sizes_tbl_cnt; ++i) {
+         if (width ==  m_pCapability->video_sizes_tbl[i].width
+@@ -1130,6 +1131,7 @@ int32_t QCameraParameters::setVideoSize(const QCameraParameters& params)
+             }
+ 
+             // set the new value
++            ALOGD("%s: Requested video size %d x %d", __func__, width, height);
+             CameraParameters::setVideoSize(width, height);
+             return NO_ERROR;
+         }
+@@ -2997,6 +2999,7 @@ int32_t QCameraParameters::setZslMode(const QCameraParameters& params)
+ 
+                 // ZSL mode changed, need restart preview
+                 m_bNeedRestart = true;
++                ALOGD("%s: ZSL Mode  -> %s", __func__, m_bZslMode_new ? "Enabled" : "Disabled");
+ 
+                 return AddSetParmEntryToBatch(m_pParamBuf,
+                                               CAM_INTF_PARM_ZSL_MODE,
+@@ -4311,7 +4314,7 @@ int32_t QCameraParameters::setFocusMode(const char *focusMode)
+                                    sizeof(FOCUS_MODES_MAP)/sizeof(QCameraMap),
+                                    focusMode);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGV("%s: Setting focus mode %s", __func__, focusMode);
++            ALOGD("%s: Setting focus mode %s", __func__, focusMode);
+             mFocusMode = (cam_focus_mode_type)value;
+ 
+             updateParamEntry(KEY_FOCUS_MODE, focusMode);
+@@ -4724,7 +4727,7 @@ int32_t QCameraParameters::setFlash(const char *flashStr)
+                                    sizeof(FLASH_MODES_MAP)/sizeof(QCameraMap),
+                                    flashStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGV("%s: Setting Flash value %s", __func__, flashStr);
++            ALOGD("%s: Setting Flash value %s", __func__, flashStr);
+ 
+             if ( NULL != m_pTorch ) {
+                 if ( value == CAM_FLASH_MODE_TORCH && !m_bRecordingHint_new) {
+@@ -5294,7 +5297,7 @@ int32_t QCameraParameters::setSceneMode(const char *sceneModeStr)
+                                    sizeof(SCENE_MODES_MAP)/sizeof(QCameraMap),
+                                    sceneModeStr);
+         if (value != NAME_NOT_FOUND) {
+-            ALOGV("%s: Setting SceneMode %s", __func__, sceneModeStr);
++            ALOGD("%s: Setting SceneMode %s", __func__, sceneModeStr);
+             updateParamEntry(KEY_SCENE_MODE, sceneModeStr);
+             int32_t rc = AddSetParmEntryToBatch(m_pParamBuf,
+                                                 CAM_INTF_PARM_BESTSHOT_MODE,
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera.c b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+index 340224f..0924018 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera.c
+@@ -168,6 +168,7 @@ static void mm_camera_event_notify(void* user_data)
+                 break;
+             case MSM_CAMERA_PRIV_SHUTDOWN:
+                 {
++                    CDBG_ERROR("%s: Camera Event DAEMON DIED received", __func__);
+                     evt.server_event_type = CAM_EVENT_TYPE_DAEMON_DIED;
+                     mm_camera_enqueue_evt(my_obj, &evt);
+                 }
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_channel.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_channel.c
+index ac3ea17..26fbccf 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_channel.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_channel.c
+@@ -1661,8 +1661,10 @@ int32_t mm_channel_superbuf_comp_and_enqueue(
+     }
+ 
+     if ( found_super_buf ) {
++            if(super_buf->super_buf[buf_s_idx].frame_idx != 0) {
++               CDBG_ERROR(" %s : **** ERROR CASE Same stream is already in queue! **** ", __func__);
++            }
+             super_buf->super_buf[buf_s_idx] = *buf_info;
+-
+             /* check if superbuf is all matched */
+             super_buf->matched = 1;
+             for (i=0; i < super_buf->num_of_bufs; i++) {
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 07d993a..1681b7f 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1001,7 +1001,7 @@ int32_t mm_stream_read_msm_frame(mm_stream_t * my_obj,
+ #endif
+ 
+         CDBG_HIGH("%s: VIDIOC_DQBUF buf_index %d, frame_idx %d, stream type %d\n",
+-             __func__, vb.index, buf_info->buf->frame_idx, my_obj->stream_info->stream_type);
++                   __func__, vb.index, buf_info->buf->frame_idx, my_obj->stream_info->stream_type);
+         if ( NULL != my_obj->mem_vtbl.clean_invalidate_buf ) {
+             rc = my_obj->mem_vtbl.clean_invalidate_buf(idx,
+                                                        my_obj->mem_vtbl.user_data);
+@@ -1201,6 +1201,9 @@ int32_t mm_stream_qbuf(mm_stream_t *my_obj, mm_camera_buf_def_t *buf)
+             return rc;
+         }
+     }
++    CDBG_HIGH("%s: VIDIOC_QBUF:fd = %d, state = %d, stream type=%d, qbuf_index %d, frame_idx %d",
++               __func__, my_obj->fd, my_obj->state, my_obj->stream_info->stream_type,
++               buffer.index,buf->frame_idx);
+ 
+     rc = ioctl(my_obj->fd, VIDIOC_QBUF, &buffer);
+     CDBG("%s: qbuf idx:%d, rc:%d", __func__, buffer.index, rc);
+-- 
+1.8.3.1
+

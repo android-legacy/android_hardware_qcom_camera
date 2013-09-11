@@ -1,0 +1,76 @@
+From 7ea84326542e0906dc713e6dee7f65ed3a834403 Mon Sep 17 00:00:00 2001
+From: erikcas <erikcas1972@gmail.com>
+Date: Fri, 3 Apr 2015 22:32:35 +0200
+Subject: [PATCH 150/176] more hal customization
+
+---
+ QCamera2/Android.mk     |  4 ++--
+ QCamera2/HAL/Android.mk | 29 ++++++++++++++++++++++++-----
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/QCamera2/Android.mk b/QCamera2/Android.mk
+index 2432564..951bea8 100644
+--- a/QCamera2/Android.mk
++++ b/QCamera2/Android.mk
+@@ -7,8 +7,8 @@ include $(CLEAR_VARS)
+ LOCAL_SRC_FILES := \
+         util/QCameraCmdThread.cpp \
+         util/QCameraQueue.cpp \
+-        QCamera2Hal.cpp \
+-        QCamera2Factory.cpp
++        HAL/QCamera2Hal.cpp \
++        HAL/QCamera2Factory.cpp
+ 
+ #HAL 3.0 source
+ LOCAL_SRC_FILES += \
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 6720d1b..336cb54 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -30,9 +30,20 @@ endif
+ 
+ LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../stack/common \
+-        frameworks/native/include/media/openmax \
+-        hardware/qcom/display/libgralloc \
+-        hardware/qcom/media/libstagefrighthw \
++        frameworks/native/include/media/openmax
++
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
++else
++    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
++endif
++ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/libstagefrighthw
++else
++    LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
++endif
++
++LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../../mm-image-codec/qexif \
+         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
+         $(LOCAL_PATH)/../util \
+@@ -45,9 +56,17 @@ LOCAL_CFLAGS += -DUSE_KK_CODE
+ endif
+ 
+ ifeq ($(TARGET_USE_VENDOR_CAMERA_EXT),true)
+-LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
++    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/msm8974/libgralloc
++else
++    LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
++endif
+ else
+-LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
++ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)  
++    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
++else
++    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
++endif
+ endif
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+ LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/media
+-- 
+1.8.3.1
+

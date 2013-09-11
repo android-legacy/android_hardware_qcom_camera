@@ -1,0 +1,66 @@
+From 3b1c12036feeb4796f94cae198f9ffdb511a0545 Mon Sep 17 00:00:00 2001
+From: Chandan Gera <cgera@codeaurora.org>
+Date: Wed, 26 Mar 2014 12:50:49 +0530
+Subject: [PATCH 127/176] Camera: Support to capture  MIPI RAW and JPEG
+ Simultaneously
+
+Adding Support to capture MIPI RAW,Embedded data and JPEG
+simultaneously.
+
+Change-Id: Ibdb2e827d1d408b66c40e72e71c992b03918052e
+---
+ QCamera2/HAL/QCamera2HWI.cpp       | 17 -----------------
+ QCamera2/HAL/QCameraParameters.cpp |  2 +-
+ 2 files changed, 1 insertion(+), 18 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 623410b..7d9d2f1 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -3334,8 +3334,6 @@ int32_t QCamera2HardwareInterface::addPreviewChannel()
+ {
+     int32_t rc = NO_ERROR;
+     QCameraChannel *pChannel = NULL;
+-    char value[PROPERTY_VALUE_MAX];
+-    bool raw_yuv = false;
+ 
+     if (m_channels[QCAMERA_CH_TYPE_PREVIEW] != NULL) {
+         // Using the no preview torch WA it is possible
+@@ -3382,21 +3380,6 @@ int32_t QCamera2HardwareInterface::addPreviewChannel()
+         return rc;
+     }
+ 
+-    property_get("persist.camera.raw_yuv", value, "0");
+-    raw_yuv = atoi(value) > 0 ? true : false;
+-    if ( raw_yuv &&
+-         ( mParameters.getRecordingHintValue() == false ) ) {
+-        rc = addStreamToChannel(pChannel,
+-                                CAM_STREAM_TYPE_RAW,
+-                                preview_raw_stream_cb_routine,
+-                                this);
+-        if (rc != NO_ERROR) {
+-            ALOGE("%s: add raw stream failed, ret = %d", __func__, rc);
+-            delete pChannel;
+-            return rc;
+-        }
+-    }
+-
+     m_channels[QCAMERA_CH_TYPE_PREVIEW] = pChannel;
+     return rc;
+ }
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index e3d49b2..806dcd0 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -5876,7 +5876,7 @@ int32_t QCameraParameters::getStreamFormat(cam_stream_type_t streamType,
+         if (mPictureFormat >= CAM_FORMAT_YUV_RAW_8BIT_YUYV) {
+             format = (cam_format_t)mPictureFormat;
+         } else {
+-            format = CAM_FORMAT_BAYER_QCOM_RAW_10BPP_GBRG;
++            format = CAM_FORMAT_BAYER_MIPI_RAW_10BPP_GBRG;
+             ALOGE("%s: Raw stream format %d bundled with snapshot",
+                    __func__,
+                    format);
+-- 
+1.8.3.1
+

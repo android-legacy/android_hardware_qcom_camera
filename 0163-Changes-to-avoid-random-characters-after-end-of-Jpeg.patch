@@ -1,0 +1,30 @@
+From b9bf82b83489129adf36daaf5ccc9f49bd54d326 Mon Sep 17 00:00:00 2001
+From: Guruprasad Gaonkar <ggaonk@codeaurora.org>
+Date: Tue, 26 Mar 2013 10:47:15 -0700
+Subject: [PATCH 163/176] Changes to avoid random characters after end of Jpeg
+ encoded file.
+
+Extra Characters seen due to 4k allign limitaion during buffer allocation.
+memset is done on extra memory space.
+
+Change-Id: I0435bec6bde208619bc611eb23f8c34805d3cbaf
+---
+ QCamera/HAL/core/src/QCameraHWI.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI.cpp b/QCamera/HAL/core/src/QCameraHWI.cpp
+index b70657b..c39afbe 100755
+--- a/QCamera/HAL/core/src/QCameraHWI.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI.cpp
+@@ -3011,7 +3011,7 @@ int QCameraHardwareInterface::initHeapMem( QCameraHalHeap_t *heap,
+                      buf_def[i].planes[j-1].length;
+             }
+         }
+-
++        memset(heap->camera_memory[i]->data,0,heap->camera_memory[i]->size);
+         ALOGE("heap->fd[%d] =%d, camera_memory=%p", i,
+               heap->mem_info[i].fd, heap->camera_memory[i]);
+         heap->local_flag[i] = 1;
+-- 
+1.8.3.1
+

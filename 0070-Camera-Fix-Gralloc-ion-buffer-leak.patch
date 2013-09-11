@@ -1,0 +1,34 @@
+From f1895e38547e79eb805f4e9f3682f3b3978602ce Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Thu, 5 Dec 2013 13:22:15 +0530
+Subject: [PATCH 070/176] Camera: Fix Gralloc ion buffer leak
+
+If one of the ION_IMPORT of
+gralloc buffer fails, we need to free
+all the dequeued buffers till then
+
+Change-Id: Ie7494dc306cf01c4a4a20c55fd31e4393e31d5cf
+---
+ QCamera2/HAL/QCameraMem.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraMem.cpp b/QCamera2/HAL/QCameraMem.cpp
+index 86e4f67..8c09e6b 100644
+--- a/QCamera2/HAL/QCameraMem.cpp
++++ b/QCamera2/HAL/QCameraMem.cpp
+@@ -1234,6 +1234,12 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+                   __func__, strerror(-err), -err);
+             ret = UNKNOWN_ERROR;
+             for(int i = 0; i < cnt; i++) {
++                struct ion_handle_data ion_handle;
++                memset(&ion_handle, 0, sizeof(ion_handle));
++                ion_handle.handle = mMemInfo[i].handle;
++                if (ioctl(mMemInfo[i].main_ion_fd, ION_IOC_FREE, &ion_handle) < 0) {
++                    ALOGE("ion free failed");
++                }
+                 if(mLocalFlag[i] != BUFFER_NOT_OWNED) {
+                     err = mWindow->cancel_buffer(mWindow, mBufferHandle[i]);
+                     ALOGD("%s: cancel_buffer: hdl =%p", __func__, (*mBufferHandle[i]));
+-- 
+1.8.3.1
+

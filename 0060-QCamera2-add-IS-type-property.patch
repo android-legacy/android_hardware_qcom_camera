@@ -1,0 +1,78 @@
+From e6884cd2d03cb3ef1dd587eb040fa40bf1311fbf Mon Sep 17 00:00:00 2001
+From: Jignesh Mehta <jigneshm@codeaurora.org>
+Date: Tue, 8 Oct 2013 13:48:38 +0300
+Subject: [PATCH 060/176] QCamera2: add IS type property
+
+- Added enum "cam_is_type_t":
+    -- IS_TYPE_DIS
+    -- IS_TYPE_GA_DIS
+    -- IS_TYPE_EIS_1_0
+    -- IS_TYPE_EIS_2_0
+
+- Added is_type filed of type cam_is_type_t in stream_info:
+    -- Required by image stabilization
+
+- Added property "persist.camera.is_type":
+    -- Supprot setting is_type in stream_info for preview
+       and video streams in camcorder mode
+
+Change-Id: I51d2582da8f1440f21015030d0843b47abc422fd
+---
+ QCamera2/HAL/QCamera2HWI.cpp      | 6 ++++++
+ QCamera2/stack/common/cam_intf.h  | 4 ++++
+ QCamera2/stack/common/cam_types.h | 7 +++++++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index e68ece9..cf83e54 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1721,6 +1721,12 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+         break;
+     case CAM_STREAM_TYPE_VIDEO:
+         streamInfo->useAVTimer = mParameters.isAVTimerEnabled();
++    case CAM_STREAM_TYPE_PREVIEW:
++        if (mParameters.getRecordingHintValue()) {
++            char value[PROPERTY_VALUE_MAX];
++            property_get("persist.camera.is_type", value, "0");
++            streamInfo->is_type = static_cast<cam_is_type_t>(atoi(value));
++        }
+         break;
+     default:
+         break;
+diff --git a/QCamera2/stack/common/cam_intf.h b/QCamera2/stack/common/cam_intf.h
+index 633bfde..49ead1c 100644
+--- a/QCamera2/stack/common/cam_intf.h
++++ b/QCamera2/stack/common/cam_intf.h
+@@ -356,6 +356,10 @@ typedef struct {
+     cam_stream_parm_buffer_t parm_buf;    /* stream based parameters */
+ 
+     uint8_t useAVTimer; /*flag to indicate use of AVTimer for TimeStamps*/
++
++    /* Image Stabilization type */
++    cam_is_type_t is_type;
++
+ } cam_stream_info_t;
+ 
+ /*****************************************************************************
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 5a27c32..8757203 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -529,6 +529,13 @@ typedef enum {
+     CAM_STREAMING_MODE_MAX
+ } cam_streaming_mode_t;
+ 
++typedef enum {
++    IS_TYPE_DIS,
++    IS_TYPE_GA_DIS,
++    IS_TYPE_EIS_1_0,
++    IS_TYPE_EIS_2_0
++} cam_is_type_t;
++
+ #define CAM_REPROCESS_MASK_TYPE_WNR (1<<0)
+ 
+ /* event from server */
+-- 
+1.8.3.1
+

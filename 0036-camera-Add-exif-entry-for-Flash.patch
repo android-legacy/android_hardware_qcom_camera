@@ -1,0 +1,337 @@
+From 365cf1a702c7123dfde378f77f8844e49bdcb9e2 Mon Sep 17 00:00:00 2001
+From: Ken Tat <gtat@codeaurora.org>
+Date: Tue, 15 Oct 2013 19:24:30 -0700
+Subject: [PATCH 036/176] camera: Add exif entry for Flash
+
+If flash mode is AUTO, take flash value from sensor
+side. Else, take it from the ui params.
+
+Change-Id: Id22ca7e03711dd3a10e44b5dd451ad5501308c16
+---
+ QCamera2/HAL/QCamera2HWI.cpp                       |  5 ++
+ QCamera2/HAL/QCamera2HWI.h                         |  7 ++-
+ QCamera2/HAL/QCameraParameters.cpp                 | 66 ++++++++++++++++++++++
+ QCamera2/HAL/QCameraParameters.h                   |  4 +-
+ QCamera2/HAL/QCameraPostProc.cpp                   |  4 ++
+ QCamera2/stack/common/cam_types.h                  |  2 +-
+ QCamera2/stack/common/mm_jpeg_interface.h          | 32 +++++++++++
+ .../stack/mm-jpeg-interface/src/mm_jpeg_exif.c     | 62 ++++++++++++++++++--
+ 8 files changed, 175 insertions(+), 7 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index c5f91cd..2b68f08 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -4897,6 +4897,11 @@ QCameraExif *QCamera2HardwareInterface::getExifData()
+ 
+     pthread_mutex_lock(&m_parm_lock);
+ 
++    //set flash value
++    mFlash = mParameters.getFlashValue();
++    mRedEye = mParameters.getRedEyeValue();
++    mFlashPresence = mParameters.getSupportedFlashModes();
++
+     // add exif entries
+     char dateTime[20];
+     memset(dateTime, 0, sizeof(dateTime));
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index 16007e7..d15ec5d 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -314,6 +314,9 @@ private:
+     int getJpegQuality();
+     int getJpegRotation();
+     void getOrientation();
++    inline int getFlash(){ return mFlash; }
++    inline int getFlashPresence(){ return mFlashPresence; }
++    inline int getRedeye(){ return mRedEye; }
+     QCameraExif *getExifData();
+ 
+     int32_t processAutoFocusEvent(cam_auto_focus_data_t &focus_data);
+@@ -476,11 +479,13 @@ private:
+     qcamera_thermal_level_enum_t mThermalLevel;
+     bool m_HDRSceneEnabled;
+     bool mLongshotEnabled;
+-
+     int32_t m_max_pic_width;
+     int32_t m_max_pic_height;
+     uint8_t mFlashNeeded;
+     int mCaptureRotation;
++    int32_t mFlash;
++    int32_t mRedEye;
++    int32_t mFlashPresence;
+ };
+ 
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 39a30c7..25e8fda 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -4441,6 +4441,71 @@ int32_t  QCameraParameters::setISOValue(const char *isoValue)
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : getFlashValue
++ *
++ * DESCRIPTION: get fash mode
++ *
++ * PARAMETERS :
++ *   @flashStr : none
++ *
++ * RETURN     : int32_t type of status
++ *
++ *==========================================================================*/
++int32_t QCameraParameters::getFlashValue()
++{
++  const char *flash_str = get(QCameraParameters::KEY_FLASH_MODE);
++  int flash_index = lookupAttr(FLASH_MODES_MAP,
++        sizeof(ISO_MODES_MAP)/sizeof(FLASH_MODES_MAP[0]), flash_str);
++
++  return flash_index;
++}
++
++
++/*===========================================================================
++ * FUNCTION   : getSupportedFlashModes
++ *
++ * DESCRIPTION: get supported fash modes
++ *
++ * PARAMETERS :
++ *   @flash_modes : none
++ *
++ * RETURN     : int32_t type of status
++ *
++ *==========================================================================*/
++int32_t QCameraParameters::getSupportedFlashModes()
++{
++  const char *flash_modes = get(QCameraParameters::KEY_SUPPORTED_FLASH_MODES);
++  int flash_presence = -1;
++
++  if (flash_modes != NULL)
++    flash_presence = FLASH_FUNC_PRESENT;
++  else
++    flash_presence = NO_FLASH_FUNC;
++
++  return flash_presence;
++}
++
++/*===========================================================================
++ * FUNCTION   : getRedEyeValue
++ *
++ * DESCRIPTION: get redeye mode
++ *
++ * PARAMETERS :
++ *   @redeyeStr : none
++ *
++ * RETURN     : int32_t type of status
++ *
++ *==========================================================================*/
++int32_t QCameraParameters::getRedEyeValue()
++{
++  const char *redEye_str = get(QCameraParameters::KEY_QC_REDEYE_REDUCTION);
++  int redEye = lookupAttr(ENABLE_DISABLE_MODES_MAP,
++        sizeof(ENABLE_DISABLE_MODES_MAP)/sizeof(QCameraMap), redEye_str);
++
++  return redEye;
++}
++
++/*===========================================================================
+  * FUNCTION   : setFlash
+  *
+  * DESCRIPTION: set f;ash mode
+@@ -5899,6 +5964,7 @@ int QCameraParameters::getJpegQuality()
+     return quality;
+ }
+ 
++
+ /*===========================================================================
+  * FUNCTION   : getJpegRotation
+  *
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 87dff8c..533c198 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -459,7 +459,9 @@ public:
+                                               // no change in parameters value
+     int getJpegQuality();
+     int getJpegRotation();
+-
++    int32_t getFlashValue();
++    int32_t getSupportedFlashModes();
++    int32_t getRedEyeValue();
+     int32_t getExifDateTime(char *dateTime, uint32_t &count);
+     int32_t getExifFocalLength(rat_t *focalLenght);
+     uint16_t getExifIsoSpeed();
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 64d207c..bd6b483 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -1293,6 +1293,10 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+         jpg_job.encode_job.p_metadata = (cam_metadata_info_t *)meta_frame->buffer;
+     }
+ 
++    m_parent->mExifParams.ui_flash_mode = (cam_flash_mode_t) m_parent->getFlash();
++    m_parent->mExifParams.red_eye = (exif_redeye_t) m_parent->getRedeye();
++    m_parent->mExifParams.flash_presence = (exif_flash_func_pre_t) m_parent->getFlashPresence();
++
+     jpg_job.encode_job.cam_exif_params = m_parent->mExifParams;
+ 
+     ALOGE("[KPI Perf] %s : PROFILE_JPEG_JOB_START", __func__);
+diff --git a/QCamera2/stack/common/cam_types.h b/QCamera2/stack/common/cam_types.h
+index 184b88c..5a27c32 100644
+--- a/QCamera2/stack/common/cam_types.h
++++ b/QCamera2/stack/common/cam_types.h
+@@ -774,7 +774,7 @@ typedef struct {
+ 
+ typedef struct {
+     cam_flash_mode_t flash_mode;
+-    float            aperture_value;
++    float aperture_value;
+ } cam_sensor_params_t;
+ 
+ typedef struct {
+diff --git a/QCamera2/stack/common/mm_jpeg_interface.h b/QCamera2/stack/common/mm_jpeg_interface.h
+index c1f86c4..147e706 100644
+--- a/QCamera2/stack/common/mm_jpeg_interface.h
++++ b/QCamera2/stack/common/mm_jpeg_interface.h
+@@ -40,9 +40,41 @@ typedef enum {
+   MM_JPEG_FMT_BITSTREAM
+ } mm_jpeg_format_t;
+ 
++typedef enum {
++   FLASH_NOT_FIRED,
++   FLASH_FIRED
++}exif_flash_fired_sate_t;
++
++typedef enum {
++   NO_STROBE_RETURN_DETECT = 0x00,
++   STROBE_RESERVED = 0x01,
++   STROBE_RET_LIGHT_NOT_DETECT = 0x02,
++   STROBE_RET_LIGHT_DETECT = 0x03
++}exif_strobe_state_t;
++
++typedef enum {
++   CAMERA_FLASH_UNKNOWN = 0x00,
++   CAMERA_FLASH_COMPULSORY = 0x08,
++   CAMERA_FLASH_SUPRESSION = 0x10,
++   CAMERA_FLASH_AUTO = 0x18
++}exif_flash_mode_t;
++
++typedef enum {
++   FLASH_FUNC_PRESENT = 0x00,
++   NO_FLASH_FUNC = 0x20
++}exif_flash_func_pre_t;
++
++typedef enum {
++   NO_REDEYE_MODE = 0x00,
++   REDEYE_MODE = 0x40
++}exif_redeye_t;
++
+ typedef struct {
+   cam_ae_params_t ae_params;
+   cam_sensor_params_t sensor_params;
++  cam_flash_mode_t ui_flash_mode;
++  exif_flash_func_pre_t flash_presence;
++  exif_redeye_t red_eye;
+ } mm_jpeg_exif_params_t;
+ 
+ typedef struct {
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_exif.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_exif.c
+index 3b5a7e3..1f9fe3f 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_exif.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_exif.c
+@@ -292,7 +292,7 @@ int32_t releaseExifEntry(QEXIF_INFO_DATA *p_exif_data)
+  *  Notes: this needs to be filled for the metadata
+  **/
+ int process_sensor_data(cam_sensor_params_t *p_sensor_params,
+-  QOMX_EXIF_INFO *exif_info)
++  QOMX_EXIF_INFO *exif_info, mm_jpeg_exif_params_t *p_cam_exif_params)
+ {
+   int rc = 0;
+   rat_t val_rat;
+@@ -312,6 +312,60 @@ int process_sensor_data(cam_sensor_params_t *p_sensor_params,
+     ALOGE("%s:%d]: Error adding Exif Entry", __func__, __LINE__);
+   }
+ 
++  short flash_tag = -1;
++  uint8_t flash_fired = 0;
++  uint8_t strobe_state = 0;
++  uint8_t flash_mode = 0;
++  uint8_t flash_presence = 0;
++  uint8_t red_eye_mode = 0;
++
++  if (!p_cam_exif_params->flash_presence) {
++    if (p_cam_exif_params->ui_flash_mode == CAM_FLASH_MODE_AUTO) {
++      ALOGD("%s %d: flashmode auto, take from sensor: %d", __func__, __LINE__,
++        p_sensor_params->flash_mode);
++      if(p_sensor_params->flash_mode == CAM_FLASH_MODE_ON)
++        flash_fired = FLASH_FIRED;
++      else if(p_sensor_params->flash_mode == CAM_FLASH_MODE_OFF)
++        flash_fired = FLASH_NOT_FIRED;
++
++      flash_mode = CAMERA_FLASH_AUTO;
++    } else {
++      ALOGD("%s %d: flashmode from ui: %d", __func__, __LINE__, p_cam_exif_params->ui_flash_mode);
++      if (p_cam_exif_params->ui_flash_mode == CAM_FLASH_MODE_ON) {
++        flash_mode = CAMERA_FLASH_COMPULSORY;
++        flash_fired = FLASH_FIRED;
++      } else if(p_cam_exif_params->ui_flash_mode == CAM_FLASH_MODE_OFF) {
++        flash_mode = CAMERA_FLASH_SUPRESSION;
++        flash_fired = FLASH_NOT_FIRED;
++      }
++   }
++
++   if((p_cam_exif_params->red_eye) && (flash_fired == FLASH_FIRED))
++     red_eye_mode = REDEYE_MODE;
++
++  } else {
++    flash_presence = NO_FLASH_FUNC;
++    red_eye_mode = NO_REDEYE_MODE;
++  }
++
++  /* No strobe flash support */
++  strobe_state = NO_STROBE_RETURN_DETECT;
++
++  /* Generating the flash tag */
++  flash_tag = 0x00 | flash_fired |
++    strobe_state | flash_mode |
++    flash_presence | red_eye_mode;
++
++  ALOGD("%s %d: flash_tag: 0x%x", __func__, __LINE__, flash_tag);
++
++
++  /*FLASH*/
++  rc = addExifEntry(exif_info, EXIFTAGID_FLASH, EXIF_SHORT,
++    sizeof(flash_tag)/2, &flash_tag);
++  if (rc) {
++    ALOGE("%s:%d]: Error adding flash Exif Entry", __func__, __LINE__);
++  }
++
+   return rc;
+ }
+ 
+@@ -415,7 +469,7 @@ int process_meta_data(cam_metadata_info_t *p_meta, QOMX_EXIF_INFO *exif_info,
+     return 0;
+   }
+   cam_ae_params_t *p_ae_params = p_meta->is_ae_params_valid ?
+-    &p_meta->ae_params : NULL;
++    &p_meta->ae_params : &p_cam_exif_params->ae_params;
+ 
+   if (NULL != p_ae_params) {
+     rc = process_3a_data(p_ae_params, exif_info);
+@@ -424,10 +478,10 @@ int process_meta_data(cam_metadata_info_t *p_meta, QOMX_EXIF_INFO *exif_info,
+     }
+   }
+   cam_sensor_params_t *p_sensor_params = p_meta->is_sensor_params_valid ?
+-    &p_meta->sensor_params : NULL;
++    &p_meta->sensor_params : &p_cam_exif_params->sensor_params;
+ 
+   if (NULL != p_sensor_params) {
+-    rc = process_sensor_data(p_sensor_params, exif_info);
++    rc = process_sensor_data(p_sensor_params, exif_info, p_cam_exif_params);
+     if (rc) {
+       ALOGE("%s %d: Failed to extract sensor params", __func__, __LINE__);
+     }
+-- 
+1.8.3.1
+

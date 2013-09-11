@@ -1,0 +1,115 @@
+From a4dccaad591755347cacf4a1edaacc9c026a5b40 Mon Sep 17 00:00:00 2001
+From: Krupal Divvela <kdivvela@codeaurora.org>
+Date: Tue, 8 Oct 2013 19:49:44 +0530
+Subject: [PATCH 031/176] Qcamera2: Make JPEG work buffer cached
+
+Make JPEG work buffer cached for better
+performance and invalidate the buffer for
+each snapshot before passing it to lower layers.
+
+Change-Id: I61a94c4f24f1e3de6ed5f8def55f517be569fcf5
+---
+ .../stack/mm-jpeg-interface/inc/mm_jpeg_ionbuf.h   | 16 ++++++++++-
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c     |  4 ++-
+ .../stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c   | 32 ++++++++++++++++++++++
+ 3 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_ionbuf.h b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_ionbuf.h
+index 3bdd7eb..5968013 100644
+--- a/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_ionbuf.h
++++ b/QCamera2/stack/mm-jpeg-interface/inc/mm_jpeg_ionbuf.h
+@@ -69,7 +69,7 @@ void* buffer_allocate(buffer_t *p_buffer, int cached);
+  *     @p_buffer: ION buffer
+  *
+  *  Return:
+- *     buffer address
++ *     error val
+  *
+  *  Description:
+  *      deallocates ION buffer
+@@ -77,5 +77,19 @@ void* buffer_allocate(buffer_t *p_buffer, int cached);
+  **/
+ int buffer_deallocate(buffer_t *p_buffer);
+ 
++/** buffer_invalidate:
++ *
++ *  Arguments:
++ *     @p_buffer: ION buffer
++ *
++ *  Return:
++ *     error val
++ *
++ *  Description:
++ *      Invalidates the cached buffer
++ *
++ **/
++int buffer_invalidate(buffer_t *p_buffer);
++
+ #endif
+ 
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index 2cb5dd4..65ac966 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -1101,6 +1101,8 @@ static OMX_ERRORTYPE mm_jpeg_configure_job_params(
+   CDBG_ERROR("%s:%d] Work buffer %d %p WorkBufSize: %d", __func__, __LINE__,
+     work_buffer.fd, work_buffer.vaddr, work_buffer.length);
+ 
++  buffer_invalidate(&p_session->work_buffer);
++
+   ret = OMX_SetConfig(p_session->omx_handle, work_buffer_index,
+     &work_buffer);
+   if (ret) {
+@@ -1515,7 +1517,7 @@ int32_t mm_jpeg_init(mm_jpeg_obj *my_obj)
+   CDBG_HIGH("Max picture size %d x %d, WorkBufSize = %ld",
+     my_obj->max_pic_w, my_obj->max_pic_h, my_obj->ionBuffer.size);
+ 
+-  my_obj->ionBuffer.addr = (uint8_t *)buffer_allocate(&my_obj->ionBuffer, 0);
++  my_obj->ionBuffer.addr = (uint8_t *)buffer_allocate(&my_obj->ionBuffer, 1);
+   if (NULL == my_obj->ionBuffer.addr) {
+     mm_jpeg_jobmgr_thread_release(my_obj);
+     mm_jpeg_queue_deinit(&my_obj->ongoing_job_q);
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
+index e55a511..5d9da19 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg_ionbuf.c
+@@ -128,4 +128,36 @@ int buffer_deallocate(buffer_t *p_buffer)
+   return lrc;
+ }
+ 
++/** buffer_invalidate:
++ *
++ *  Arguments:
++ *     @p_buffer: ION buffer
++ *
++ *  Return:
++ *     error val
++ *
++ *  Description:
++ *      Invalidates the cached buffer
++ *
++ **/
++int buffer_invalidate(buffer_t *p_buffer)
++{
++  int lrc = 0;
++  struct ion_flush_data cache_inv_data;
++  struct ion_custom_data custom_data;
++
++  memset(&cache_inv_data, 0, sizeof(cache_inv_data));
++  memset(&custom_data, 0, sizeof(custom_data));
++  cache_inv_data.vaddr = p_buffer->addr;
++  cache_inv_data.fd = p_buffer->ion_info_fd.fd;
++  cache_inv_data.handle = p_buffer->ion_info_fd.handle;
++  cache_inv_data.length = p_buffer->size;
++  custom_data.cmd = ION_IOC_INV_CACHES;
++  custom_data.arg = (unsigned long)&cache_inv_data;
++
++  lrc = ioctl(p_buffer->ion_info_fd.fd, ION_IOC_CUSTOM, &custom_data);
++  if (lrc < 0)
++    CDBG_ERROR("%s: Cache Invalidate failed: %s\n", __func__, strerror(errno));
+ 
++  return lrc;
++}
+-- 
+1.8.3.1
+

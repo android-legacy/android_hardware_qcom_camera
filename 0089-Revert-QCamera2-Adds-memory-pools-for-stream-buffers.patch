@@ -1,0 +1,451 @@
+From 6fef8be5c9079026f099218024992d9fbaf68fd8 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Mon, 13 Jan 2014 23:48:01 -0800
+Subject: [PATCH 089/176] Revert "QCamera2: Adds memory pools for stream
+ buffers"
+
+This reverts commit 3dde7571c2323e043ad0833d1985c894a5f6f7ad.
+---
+ QCamera2/HAL/QCamera2HWI.cpp         |  10 +--
+ QCamera2/HAL/QCamera2HWI.h           |   2 -
+ QCamera2/HAL/QCameraMem.cpp          | 157 ++++-------------------------------
+ QCamera2/HAL/QCameraMem.h            |  54 +-----------
+ QCamera2/HAL/QCameraStateMachine.cpp |  10 ---
+ 5 files changed, 22 insertions(+), 211 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 2e38f61..ca7465d 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1545,10 +1545,7 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+     case CAM_STREAM_TYPE_PREVIEW:
+         {
+             if (isNoDisplayMode()) {
+-                mem = new QCameraStreamMemory(mGetMemory,
+-                                              bCachedMem,
+-                                              &m_memoryPool,
+-                                              stream_type);
++                mem = new QCameraStreamMemory(mGetMemory, bCachedMem);
+             } else {
+                 cam_dimension_t dim;
+                 QCameraGrallocMemory *grallocMemory =
+@@ -1589,10 +1586,7 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
+     case CAM_STREAM_TYPE_RAW:
+     case CAM_STREAM_TYPE_METADATA:
+     case CAM_STREAM_TYPE_OFFLINE_PROC:
+-        mem = new QCameraStreamMemory(mGetMemory,
+-                                      bCachedMem,
+-                                      &m_memoryPool,
+-                                      stream_type);
++        mem = new QCameraStreamMemory(mGetMemory, bCachedMem);
+         break;
+     case CAM_STREAM_TYPE_VIDEO:
+         {
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index e0fc5af..3e9a858 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -45,7 +45,6 @@
+ #include "QCameraAllocator.h"
+ #include "QCameraPostProc.h"
+ #include "QCameraThermalAdapter.h"
+-#include "QCameraMem.h"
+ 
+ extern "C" {
+ #include <mm_camera_interface.h>
+@@ -476,7 +475,6 @@ private:
+     pthread_mutex_t m_lock;
+     pthread_cond_t m_cond;
+     qcamera_api_result_t m_apiResult;
+-    QCameraMemoryPool m_memoryPool;
+ 
+     pthread_mutex_t m_evtLock;
+     pthread_cond_t m_evtCond;
+diff --git a/QCamera2/HAL/QCameraMem.cpp b/QCamera2/HAL/QCameraMem.cpp
+index 1ef2cb0..8c09e6b 100644
+--- a/QCamera2/HAL/QCameraMem.cpp
++++ b/QCamera2/HAL/QCameraMem.cpp
+@@ -58,12 +58,8 @@ namespace qcamera {
+  *
+  * RETURN     : None
+  *==========================================================================*/
+-QCameraMemory::QCameraMemory(bool cached,
+-                             QCameraMemoryPool *pool,
+-                             cam_stream_type_t streamType)
+-    :m_bCached(cached),
+-     mMemoryPool(pool),
+-     mStreamType(streamType)
++QCameraMemory::QCameraMemory(bool cached)
++    :m_bCached(cached)
+ {
+     mBufferCount = 0;
+     memset(mMemInfo, 0, sizeof(mMemInfo));
+@@ -255,30 +251,13 @@ int QCameraMemory::alloc(int count, int size, int heap_id)
+     }
+ 
+     for (int i = mBufferCount; i < new_bufCnt; i ++) {
+-        if ( NULL == mMemoryPool ) {
+-            ALOGE("%s : No memory pool available", __func__);
+-            rc = allocOneBuffer(mMemInfo[i], heap_id, size, m_bCached);
+-            if (rc < 0) {
+-                ALOGE("%s: AllocateIonMemory failed", __func__);
+-                for (int j = i-1; j >= mBufferCount; j--)
+-                    deallocOneBuffer(mMemInfo[j]);
+-                break;
+-            }
+-        } else {
+-            rc = mMemoryPool->allocateBuffer(mMemInfo[i],
+-                                             heap_id,
+-                                             size,
+-                                             m_bCached,
+-                                             mStreamType);
+-            if (rc < 0) {
+-                ALOGE("%s: Memory pool allocation failed", __func__);
+-                for (int j = i-1; j >= mBufferCount; j--)
+-                    mMemoryPool->releaseBuffer(mMemInfo[j],
+-                                               mStreamType);
+-                break;
+-            }
++        rc = allocOneBuffer(mMemInfo[i], heap_id, size);
++        if (rc < 0) {
++            ALOGE("%s: AllocateIonMemory failed", __func__);
++            for (int j = i-1; j >= mBufferCount; j--)
++                deallocOneBuffer(mMemInfo[j]);
++            break;
+         }
+-
+     }
+     return rc;
+ }
+@@ -294,13 +273,8 @@ int QCameraMemory::alloc(int count, int size, int heap_id)
+  *==========================================================================*/
+ void QCameraMemory::dealloc()
+ {
+-    for (int i = 0; i < mBufferCount; i++) {
+-        if ( NULL == mMemoryPool ) {
+-            deallocOneBuffer(mMemInfo[i]);
+-        } else {
+-            mMemoryPool->releaseBuffer(mMemInfo[i], mStreamType);
+-        }
+-    }
++    for (int i = 0; i < mBufferCount; i++)
++        deallocOneBuffer(mMemInfo[i]);
+ }
+ 
+ /*===========================================================================
+@@ -312,16 +286,12 @@ void QCameraMemory::dealloc()
+  *   @memInfo : [output] reference to struct to store additional memory allocation info
+  *   @heap    : [input] heap id to indicate where the buffers will be allocated from
+  *   @size    : [input] lenght of the buffer to be allocated
+- *   @cached  : [input] flag whether buffer needs to be cached
+  *
+  * RETURN     : int32_t type of status
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
+-int QCameraMemory::allocOneBuffer(QCameraMemInfo &memInfo,
+-                                  int heap_id,
+-                                  int size,
+-                                  bool cached)
++int QCameraMemory::allocOneBuffer(QCameraMemInfo &memInfo, int heap_id, int size)
+ {
+     int rc = OK;
+     struct ion_handle_data handle_data;
+@@ -340,7 +310,7 @@ int QCameraMemory::allocOneBuffer(QCameraMemInfo &memInfo,
+     /* to make it page size aligned */
+     alloc.len = (alloc.len + 4095) & (~4095);
+     alloc.align = 4096;
+-    if (cached) {
++    if (m_bCached) {
+         alloc.flags = ION_FLAG_CACHED;
+     }
+     alloc.heap_mask = heap_id;
+@@ -362,10 +332,6 @@ int QCameraMemory::allocOneBuffer(QCameraMemInfo &memInfo,
+     memInfo.fd = ion_info_fd.fd;
+     memInfo.handle = ion_info_fd.handle;
+     memInfo.size = alloc.len;
+-    memInfo.cached = cached;
+-    memInfo.heap_id = heap_id;
+-
+-    ALOGD("%s : ION buffer %p with size %d allocated", __func__, memInfo.handle, size);
+     return OK;
+ 
+ ION_MAP_FAILED:
+@@ -408,95 +374,6 @@ void QCameraMemory::deallocOneBuffer(QCameraMemInfo &memInfo)
+     memInfo.size = 0;
+ }
+ 
+-QCameraMemoryPool::QCameraMemoryPool()
+-{
+-    pthread_mutex_init(&mLock, NULL);
+-}
+-
+-
+-QCameraMemoryPool::~QCameraMemoryPool()
+-{
+-    clear();
+-    pthread_mutex_destroy(&mLock);
+-}
+-
+-void QCameraMemoryPool::releaseBuffer(
+-                                struct QCameraMemory::QCameraMemInfo &memInfo,
+-                                cam_stream_type_t streamType)
+-{
+-    pthread_mutex_lock(&mLock);
+-
+-    mPools[streamType].push_back(memInfo);
+-
+-    pthread_mutex_unlock(&mLock);
+-}
+-
+-void QCameraMemoryPool::clear()
+-{
+-    pthread_mutex_lock(&mLock);
+-
+-    for (int i = CAM_STREAM_TYPE_DEFAULT; i < CAM_STREAM_TYPE_MAX; i++ ) {
+-        List<struct QCameraMemory::QCameraMemInfo>::iterator it = mPools[i].begin();
+-        for( ; it != mPools[i].end() ; it++) {
+-            QCameraMemory::deallocOneBuffer(*it);
+-        }
+-
+-        mPools[i].clear();
+-    }
+-
+-    pthread_mutex_unlock(&mLock);
+-}
+-
+-int QCameraMemoryPool::findBufferLocked(
+-                                  struct QCameraMemory::QCameraMemInfo &memInfo,
+-                                  int heap_id,
+-                                  uint32_t size,
+-                                  bool cached,
+-                                  cam_stream_type_t streamType)
+-{
+-    int rc = NAME_NOT_FOUND;
+-
+-    if (mPools[streamType].empty()) {
+-        return NAME_NOT_FOUND;
+-    }
+-
+-    List<struct QCameraMemory::QCameraMemInfo>::iterator it = mPools[streamType].begin();
+-    for( ; it != mPools[streamType].end() ; it++) {
+-        if( ((*it).size >= size) &&
+-            ((*it).heap_id == heap_id) &&
+-            ((*it).cached == cached) ) {
+-            memInfo = *it;
+-            ALOGE("%s : Found buffer %p size %d", __func__, memInfo.handle, memInfo.size);
+-            mPools[streamType].erase(it);
+-            rc = NO_ERROR;
+-            break;
+-        }
+-    }
+-
+-    return rc;
+-}
+-
+-int QCameraMemoryPool::allocateBuffer(struct QCameraMemory::QCameraMemInfo &memInfo,
+-                                      int heap_id,
+-                                      int size,
+-                                      bool cached,
+-                                      cam_stream_type_t streamType)
+-{
+-    int rc = NO_ERROR;
+-
+-    pthread_mutex_lock(&mLock);
+-
+-    rc = findBufferLocked(memInfo, heap_id, size, cached, streamType);
+-    if (NAME_NOT_FOUND == rc ) {
+-        ALOGE("%s : Buffer not found!", __func__);
+-        rc = QCameraMemory::allocOneBuffer(memInfo, heap_id, size, cached);
+-    }
+-
+-    pthread_mutex_unlock(&mLock);
+-
+-    return rc;
+-}
+-
+ /*===========================================================================
+  * FUNCTION   : QCameraHeapMemory
+  *
+@@ -743,10 +620,8 @@ int QCameraHeapMemory::getMatchBufIndex(const void *opaque,
+  * RETURN     : none
+  *==========================================================================*/
+ QCameraStreamMemory::QCameraStreamMemory(camera_request_memory getMemory,
+-                                         bool cached,
+-                                         QCameraMemoryPool *pool,
+-                                         cam_stream_type_t streamType)
+-    :QCameraMemory(cached, pool, streamType),
++                                         bool cached)
++    :QCameraMemory(cached),
+      mGetMemory(getMemory)
+ {
+     for (int i = 0; i < MM_CAMERA_MAX_NUM_FRAMES; i ++)
+@@ -1288,7 +1163,7 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+     struct ion_fd_data ion_info_fd;
+     memset(&ion_info_fd, 0, sizeof(ion_info_fd));
+ 
+-    ALOGD(" %s : E ", __func__);
++    ALOGI(" %s : E ", __FUNCTION__);
+ 
+     if (!mWindow) {
+         ALOGE("Invalid native window");
+@@ -1450,7 +1325,7 @@ int QCameraGrallocMemory::allocate(int count, int /*size*/)
+     }
+ 
+ end:
+-    ALOGD(" %s : X ",__func__);
++    ALOGI(" %s : X ",__func__);
+     return ret;
+ }
+ 
+diff --git a/QCamera2/HAL/QCameraMem.h b/QCamera2/HAL/QCameraMem.h
+index 18a2a24..1dee2cd 100644
+--- a/QCamera2/HAL/QCameraMem.h
++++ b/QCamera2/HAL/QCameraMem.h
+@@ -32,7 +32,6 @@
+ 
+ #include <hardware/camera.h>
+ #include <utils/Mutex.h>
+-#include <utils/List.h>
+ 
+ extern "C" {
+ #include <sys/types.h>
+@@ -42,8 +41,6 @@ extern "C" {
+ 
+ namespace qcamera {
+ 
+-class QCameraMemoryPool;
+-
+ // Base class for all memory types. Abstract.
+ class QCameraMemory {
+ 
+@@ -64,69 +61,29 @@ public:
+     virtual int getMatchBufIndex(const void *opaque, bool metadata) const = 0;
+     virtual void *getPtr(int index) const= 0;
+ 
+-    QCameraMemory(bool cached,
+-                  QCameraMemoryPool *pool = NULL,
+-                  cam_stream_type_t streamType = CAM_STREAM_TYPE_DEFAULT);
++    QCameraMemory(bool cached);
+     virtual ~QCameraMemory();
+ 
+     void getBufDef(const cam_frame_len_offset_t &offset,
+                 mm_camera_buf_def_t &bufDef, int index) const;
+ 
+ protected:
+-
+-    friend class QCameraMemoryPool;
+-
+     struct QCameraMemInfo {
+         int fd;
+         int main_ion_fd;
+         struct ion_handle *handle;
+         uint32_t size;
+-        bool cached;
+-        int heap_id;
+     };
+ 
+     int alloc(int count, int size, int heap_id);
+     void dealloc();
+-    static int allocOneBuffer(struct QCameraMemInfo &memInfo,
+-                              int heap_id,
+-                              int size,
+-                              bool cached);
+-    static void deallocOneBuffer(struct QCameraMemInfo &memInfo);
++    int allocOneBuffer(struct QCameraMemInfo &memInfo, int heap_id, int size);
++    void deallocOneBuffer(struct QCameraMemInfo &memInfo);
+     int cacheOpsInternal(int index, unsigned int cmd, void *vaddr);
+ 
+     bool m_bCached;
+     int mBufferCount;
+     struct QCameraMemInfo mMemInfo[MM_CAMERA_MAX_NUM_FRAMES];
+-    QCameraMemoryPool *mMemoryPool;
+-    cam_stream_type_t mStreamType;
+-};
+-
+-class QCameraMemoryPool {
+-
+-public:
+-
+-    QCameraMemoryPool();
+-    virtual ~QCameraMemoryPool();
+-
+-    int allocateBuffer(struct QCameraMemory::QCameraMemInfo &memInfo,
+-                       int heap_id,
+-                       int size,
+-                       bool cached,
+-                       cam_stream_type_t streamType);
+-    void releaseBuffer(struct QCameraMemory::QCameraMemInfo &memInfo,
+-                       cam_stream_type_t streamType);
+-    void clear();
+-
+-protected:
+-
+-    int findBufferLocked(struct QCameraMemory::QCameraMemInfo &memInfo,
+-                         int heap_id,
+-                         uint32_t size,
+-                         bool cached,
+-                         cam_stream_type_t streamType);
+-
+-    android::List<QCameraMemory::QCameraMemInfo> mPools[CAM_STREAM_TYPE_MAX];
+-    pthread_mutex_t mLock;
+ };
+ 
+ // Internal heap memory is used for memories used internally
+@@ -153,10 +110,7 @@ private:
+ // framework. They are allocated from /dev/ion or gralloc.
+ class QCameraStreamMemory : public QCameraMemory {
+ public:
+-    QCameraStreamMemory(camera_request_memory getMemory,
+-                        bool cached,
+-                        QCameraMemoryPool *pool = NULL,
+-                        cam_stream_type_t streamType = CAM_STREAM_TYPE_DEFAULT);
++    QCameraStreamMemory(camera_request_memory getMemory, bool cached);
+     virtual ~QCameraStreamMemory();
+ 
+     virtual int allocate(int count, int size);
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index 2b4f149..f90e24e 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -352,10 +352,6 @@ int32_t QCameraStateMachine::procEvtPreviewStoppedState(qcamera_sm_evt_enum_t ev
+         {
+             bool needRestart = false;
+             rc = m_parent->updateParameters((char*)payload, needRestart);
+-            if (needRestart) {
+-                // Clear memory pools
+-                m_parent->m_memoryPool.clear();
+-            }
+             if (rc == NO_ERROR) {
+                 rc = m_parent->commitParameterChanges();
+             }
+@@ -674,8 +670,6 @@ int32_t QCameraStateMachine::procEvtPreviewReadyState(qcamera_sm_evt_enum_t evt,
+                 if (needRestart) {
+                     // need restart preview for parameters to take effect
+                     m_parent->unpreparePreview();
+-                    // Clear memory pools
+-                    m_parent->m_memoryPool.clear();
+                     // commit parameter changes to server
+                     m_parent->commitParameterChanges();
+                     // prepare preview again
+@@ -959,8 +953,6 @@ int32_t QCameraStateMachine::procEvtPreviewingState(qcamera_sm_evt_enum_t evt,
+                     // need restart preview for parameters to take effect
+                     // stop preview
+                     m_parent->stopPreview();
+-                    // Clear memory pools
+-                    m_parent->m_memoryPool.clear();
+                     // commit parameter changes to server
+                     m_parent->commitParameterChanges();
+                     // start preview again
+@@ -2502,8 +2494,6 @@ int32_t QCameraStateMachine::procEvtPreviewPicTakingState(qcamera_sm_evt_enum_t
+                     // need restart preview for parameters to take effect
+                     // stop preview
+                     m_parent->stopPreview();
+-                    // Clear memory pools
+-                    m_parent->m_memoryPool.clear();
+                     // commit parameter changes to server
+                     m_parent->commitParameterChanges();
+                     // start preview again
+-- 
+1.8.3.1
+

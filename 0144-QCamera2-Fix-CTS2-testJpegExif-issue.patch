@@ -1,0 +1,75 @@
+From 3aab8bbcdba834e1432756529c98b2852bb53477 Mon Sep 17 00:00:00 2001
+From: Santhosh Kumar Thimmanna Bhattar <sthim@codeaurora.org>
+Date: Mon, 3 Nov 2014 19:23:11 +0530
+Subject: [PATCH 144/176] QCamera2: Fix CTS2 testJpegExif issue
+
+Issue:In HAL setJpegThumbnailSize() we are overriding
+      the CTS requested thumbnail size with the optimal thumbnailsize
+      which has same aspect ratio to snapshot.
+      Thus thumbnail  resolution set by CTS and the captured
+      image is not matching.
+Fix:  Move this aspect ratio matching logic to APP and
+      honor the CTS set thumbnail resolution.
+
+Change-Id: I05a6bf7901ee93f5ee5be113e8b744b58e26e142
+---
+ QCamera2/HAL/QCameraParameters.cpp | 43 ++------------------------------------
+ 1 file changed, 2 insertions(+), 41 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 378d9a9..264719a 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -1336,47 +1336,8 @@ int32_t QCameraParameters::setJpegThumbnailSize(const QCameraParameters& params)
+ 
+     ALOGV("requested jpeg thumbnail size %d x %d", width, height);
+ 
+-    int sizes_cnt = sizeof(THUMBNAIL_SIZES_MAP) / sizeof(cam_dimension_t);
+-
+-    int pic_width = 0, pic_height = 0;
+-    params.getPictureSize(&pic_width, &pic_height);
+-    if (pic_height == 0) {
+-        ALOGE("%s: picture size is invalid (%d x %d)", __func__, pic_width, pic_height);
+-        return BAD_VALUE;
+-    }
+-    double picAspectRatio = (double)pic_width / pic_height;
+-
+-    int optimalWidth = 0, optimalHeight = 0;
+-    if (width != 0 || height != 0) {
+-        // If input jpeg thumnmail size is (0,0), meaning no thumbnail needed
+-        // hornor this setting.
+-        // Otherwise, find optimal jpeg thumbnail size that has same aspect ration
+-        // as picture size
+-
+-        // Try to find a size matches aspect ratio and has the largest width
+-        for (int i = 0; i < sizes_cnt; i++) {
+-            if (THUMBNAIL_SIZES_MAP[i].height == 0) {
+-                // No thumbnail case, just skip
+-                continue;
+-            }
+-            double ratio =
+-                (double)THUMBNAIL_SIZES_MAP[i].width / THUMBNAIL_SIZES_MAP[i].height;
+-            if (fabs(ratio - picAspectRatio) > ASPECT_TOLERANCE)  {
+-                continue;
+-            }
+-            if (THUMBNAIL_SIZES_MAP[i].width > optimalWidth) {
+-                optimalWidth = THUMBNAIL_SIZES_MAP[i].width;
+-                optimalHeight = THUMBNAIL_SIZES_MAP[i].height;
+-            }
+-        }
+-        if (optimalWidth == 0 && optimalHeight == 0) {
+-            ALOGD("%s: Could not find optimal size", __func__);
+-            optimalWidth = width;
+-            optimalHeight = height;
+-        }
+-    }
+-    set(KEY_JPEG_THUMBNAIL_WIDTH, optimalWidth);
+-    set(KEY_JPEG_THUMBNAIL_HEIGHT, optimalHeight);
++    set(KEY_JPEG_THUMBNAIL_WIDTH, width);
++    set(KEY_JPEG_THUMBNAIL_HEIGHT, height);
+     return NO_ERROR;
+ }
+ 
+-- 
+1.8.3.1
+

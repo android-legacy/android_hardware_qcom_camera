@@ -1,0 +1,133 @@
+From ceb325c7452b653fe61bd9ee188dee2ee98951e6 Mon Sep 17 00:00:00 2001
+From: Kamen Kirov <kkirov@codeaurora.org>
+Date: Wed, 4 Sep 2013 14:52:18 -0700
+Subject: [PATCH 002/176] QCamera2: Add OMX extension for metadata
+
+Adds an OMX extension to allow passing of metadata
+
+Change-Id: I10560d762be6b78b3866f3be3b84d6915451e7e7
+---
+ QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c | 54 +++++++++++++++++++++++++-
+ mm-image-codec/qomx_core/QOMX_JpegExtensions.h | 13 +++++++
+ 2 files changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+index 24ca8e2..2d8b9f9 100644
+--- a/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
++++ b/QCamera2/stack/mm-jpeg-interface/src/mm_jpeg.c
+@@ -450,6 +450,47 @@ OMX_ERRORTYPE mm_jpeg_encoding_mode(
+   return rc;
+ }
+ 
++/** mm_jpeg_metadata:
++ *
++ *  Arguments:
++ *    @p_session: job session
++ *
++ *  Return:
++ *       OMX error values
++ *
++ *  Description:
++ *       Pass meta data
++ *
++ **/
++OMX_ERRORTYPE mm_jpeg_metadata(
++  mm_jpeg_job_session_t* p_session)
++{
++  OMX_ERRORTYPE rc = OMX_ErrorNone;
++  int32_t i = 0;
++  OMX_INDEXTYPE indexType;
++  mm_jpeg_encode_params_t *p_params = &p_session->params;
++  mm_jpeg_encode_job_t *p_jobparams = &p_session->encode_job;
++  QOMX_METADATA lMeta;
++
++  rc = OMX_GetExtensionIndex(p_session->omx_handle,
++      QOMX_IMAGE_EXT_METADATA_NAME, &indexType);
++
++  if (rc != OMX_ErrorNone) {
++    CDBG_ERROR("%s:%d] Failed", __func__, __LINE__);
++    return rc;
++  }
++
++  lMeta.metadata = (OMX_U8 *)p_jobparams->p_metadata;
++  lMeta.metaPayloadSize = sizeof(*p_jobparams->p_metadata);
++
++  rc = OMX_SetConfig(p_session->omx_handle, indexType, &lMeta);
++  if (rc != OMX_ErrorNone) {
++    CDBG_ERROR("%s:%d] Failed", __func__, __LINE__);
++    return rc;
++  }
++  return OMX_ErrorNone;
++}
++
+ /** map_jpeg_format:
+  *
+  *  Arguments:
+@@ -840,7 +881,11 @@ OMX_ERRORTYPE mm_jpeg_session_config_main(mm_jpeg_job_session_t *p_session)
+   }
+ 
+   /* set the encoding mode */
+-  mm_jpeg_encoding_mode(p_session);
++  rc = mm_jpeg_encoding_mode(p_session);
++  if (OMX_ErrorNone != rc) {
++    CDBG_ERROR("%s: config encoding mode failed", __func__);
++    return rc;
++  }
+ 
+   return rc;
+ }
+@@ -1061,6 +1106,13 @@ static OMX_ERRORTYPE mm_jpeg_configure_job_params(
+     return ret;
+   }
+ 
++  /* set metadata */
++  ret = mm_jpeg_metadata(p_session);
++  CDBG_ERROR("%s: config makernote data failed", __func__);
++  if (OMX_ErrorNone != ret) {
++    return ret;
++  }
++
+   return ret;
+ }
+ 
+diff --git a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+index 80583a9..f4f2e63 100644
+--- a/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
++++ b/mm-image-codec/qomx_core/QOMX_JpegExtensions.h
+@@ -56,6 +56,7 @@ typedef enum {
+ #define QOMX_IMAGE_EXT_MOBICAT_NAME            "OMX.QCOM.image.exttype.mobicat"
+ #define QOMX_IMAGE_EXT_ENCODING_MODE_NAME        "OMX.QCOM.image.encoding.mode"
+ #define QOMX_IMAGE_EXT_WORK_BUFFER_NAME      "OMX.QCOM.image.exttype.workbuffer"
++#define QOMX_IMAGE_EXT_METADATA_NAME      "OMX.QCOM.image.exttype.metadata"
+ 
+ /** QOMX_IMAGE_EXT_INDEXTYPE
+ *  This enum is an extension of the OMX_INDEXTYPE enum and
+@@ -83,6 +84,9 @@ typedef enum {
+   //Name: OMX.QCOM.image.exttype.workbuffer
+   QOMX_IMAGE_EXT_WORK_BUFFER = 0x07F00005,
+ 
++  //Name: OMX.QCOM.image.exttype.metadata
++  QOMX_IMAGE_EXT_METADATA = 0x07F00008,
++
+ } QOMX_IMAGE_EXT_INDEXTYPE;
+ 
+ /** QOMX_BUFFER_INFO
+@@ -196,6 +200,15 @@ typedef struct {
+   uint32_t length;
+ } QOMX_WORK_BUFFER;
+ 
++/**QOMX_METADATA
++ *
++ * meta data to be set in EXIF
++ */
++typedef struct {
++  OMX_U8  *metadata;
++  OMX_U32 metaPayloadSize;
++} QOMX_METADATA;
++
+ /** QOMX_IMG_COLOR_FORMATTYPE
+ *  This enum is an extension of the OMX_COLOR_FORMATTYPE enum.
+ *  It specifies Qcom supported color formats.
+-- 
+1.8.3.1
+

@@ -1,0 +1,128 @@
+From e0b4e1d4e4064ebf7a5142533244207880f521f0 Mon Sep 17 00:00:00 2001
+From: Santhosh Kumar Thimmanna Bhattar <sthim@codeaurora.org>
+Date: Mon, 20 Oct 2014 17:51:31 +0530
+Subject: [PATCH 140/176] camera-HAL: Moving camera HAL projects to 3.5.2.1
+ branch
+
+-Currently camera HAL is pointing to LA.BF.1.1_BU branch,
+ moving it to LNX.LA.3.5.2.1 branch.
+
+Change-Id: Id04068a81280c44ff825230a13f5e48807dd29b5
+---
+ QCamera2/HAL/Android.mk                          |  6 ++++++
+ QCamera2/HAL/QCamera2Hal.cpp                     |  3 +++
+ QCamera2/HAL/QCameraParameters.cpp               |  2 ++
+ QCamera2/stack/common/mm_jpeg_interface.h        |  3 +++
+ QCamera2/stack/mm-camera-interface/Android.mk    |  4 ++++
+ QCamera2/stack/mm-jpeg-interface/test/Android.mk | 12 ++++++++++++
+ 6 files changed, 30 insertions(+)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 27c7b23..6720d1b 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -38,6 +38,12 @@ LOCAL_C_INCLUDES := \
+         $(LOCAL_PATH)/../util \
+         $(LOCAL_PATH)/wrapper
+ 
++ifeq ($(call is-platform-sdk-version-at-least,20),true)
++LOCAL_C_INCLUDES += system/media/camera/include
++else
++LOCAL_CFLAGS += -DUSE_KK_CODE
++endif
++
+ ifeq ($(TARGET_USE_VENDOR_CAMERA_EXT),true)
+ LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
+ else
+diff --git a/QCamera2/HAL/QCamera2Hal.cpp b/QCamera2/HAL/QCamera2Hal.cpp
+index 1ff3231..d6e1e09 100644
+--- a/QCamera2/HAL/QCamera2Hal.cpp
++++ b/QCamera2/HAL/QCamera2Hal.cpp
+@@ -50,6 +50,9 @@ camera_module_t HAL_MODULE_INFO_SYM = {
+ #endif
+ #ifdef USE_VENDOR_CAMERA_EXT
+     get_vendor_tag_ops: NULL,
++#ifndef USE_KK_CODE
++    open_legacy: NULL,
++#endif
+     reserved:  {0}
+ #endif
+ };
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index db54a02..378d9a9 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -5536,7 +5536,9 @@ int32_t QCameraParameters::enableFlash(bool enableFlash, bool commitSettings)
+         str);
+ 
+     if (value != NAME_NOT_FOUND) {
++#ifdef USE_KK_CODE
+         ALOGV("%s: Setting Flash value %s", __func__, flashStr);
++#endif
+ 
+         rc = AddSetParmEntryToBatch(m_pParamBuf,
+                                       CAM_INTF_PARM_LED_MODE,
+diff --git a/QCamera2/stack/common/mm_jpeg_interface.h b/QCamera2/stack/common/mm_jpeg_interface.h
+index 2b31e4c..2436b0f 100644
+--- a/QCamera2/stack/common/mm_jpeg_interface.h
++++ b/QCamera2/stack/common/mm_jpeg_interface.h
+@@ -102,6 +102,9 @@ typedef enum {
+   MM_JPEG_COLOR_FORMAT_YCBCRLP_H1V2,
+   MM_JPEG_COLOR_FORMAT_YCRCBLP_H1V1,
+   MM_JPEG_COLOR_FORMAT_YCBCRLP_H1V1,
++#ifdef USE_L_CODE
++  MM_JPEG_COLOR_FORMAT_MONOCHROME,
++#endif
+   MM_JPEG_COLOR_FORMAT_BITSTREAM_H2V2,
+   MM_JPEG_COLOR_FORMAT_BITSTREAM_H2V1,
+   MM_JPEG_COLOR_FORMAT_BITSTREAM_H1V2,
+diff --git a/QCamera2/stack/mm-camera-interface/Android.mk b/QCamera2/stack/mm-camera-interface/Android.mk
+index e05a856..210ae31 100755
+--- a/QCamera2/stack/mm-camera-interface/Android.mk
++++ b/QCamera2/stack/mm-camera-interface/Android.mk
+@@ -36,6 +36,10 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ 
+ LOCAL_C_INCLUDES += hardware/qcom/media/mm-core/inc
+ 
++ifeq ($(call is-platform-sdk-version-at-least,20),true)
++LOCAL_C_INCLUDES += system/media/camera/include
++endif
++
+ ifneq ($(call is-platform-sdk-version-at-least,17),true)
+   LOCAL_CFLAGS += -include bionic/libc/kernel/common/linux/socket.h
+   LOCAL_CFLAGS += -include bionic/libc/kernel/common/linux/un.h
+diff --git a/QCamera2/stack/mm-jpeg-interface/test/Android.mk b/QCamera2/stack/mm-jpeg-interface/test/Android.mk
+index df24cac..e21046b 100644
+--- a/QCamera2/stack/mm-jpeg-interface/test/Android.mk
++++ b/QCamera2/stack/mm-jpeg-interface/test/Android.mk
+@@ -7,7 +7,11 @@ LOCAL_PATH := $(MM_JPEG_TEST_PATH)
+ LOCAL_MODULE_TAGS := optional
+ 
+ LOCAL_CFLAGS := -DCAMERA_ION_HEAP_ID=ION_IOMMU_HEAP_ID
++
++ifneq ($(call is-platform-sdk-version-at-least,20),true)
+ LOCAL_CFLAGS += -Werror
++endif
++
+ LOCAL_CFLAGS += -D_ANDROID_
+ LOCAL_CFLAGS += -include mm_jpeg_dbg.h
+ 
+@@ -49,7 +53,15 @@ LOCAL_PATH := $(MM_JPEG_TEST_PATH)
+ LOCAL_MODULE_TAGS := optional
+ 
+ LOCAL_CFLAGS := -DCAMERA_ION_HEAP_ID=ION_IOMMU_HEAP_ID
++
++ifneq ($(call is-platform-sdk-version-at-least,20),true)
+ LOCAL_CFLAGS += -Werror
++endif
++
++ifeq ($(call is-platform-sdk-version-at-least,20),true)
++LOCAL_CFLAGS += -DUSE_L_CODE
++endif
++
+ LOCAL_CFLAGS += -D_ANDROID_
+ LOCAL_CFLAGS += -include mm_jpeg_dbg.h
+ 
+-- 
+1.8.3.1
+

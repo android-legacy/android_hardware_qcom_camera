@@ -1,0 +1,198 @@
+From 05fd2ec6b32d6734ac465f2537f6ad087b7d9856 Mon Sep 17 00:00:00 2001
+From: Lokesh Kumar Aakulu <lkumar@codeaurora.org>
+Date: Fri, 20 Dec 2013 16:37:17 +0530
+Subject: [PATCH 080/176] mm-camera-test: Add support to Tintless enable &
+ disable
+
+Add support to send set parameter call to ISP to Enable
+or diable Tintless support.
+
+CRs-Fixed: 594220
+Change-Id: Icbf1299d392ed3407c86cc4436e935ab0b044943
+---
+ QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h |  1 +
+ .../mm-camera-test/inc/mm_qcamera_main_menu.h      |  4 ++
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c | 45 +++++++++++++++++++++-
+ .../mm-camera-test/src/mm_qcamera_main_menu.c      | 41 ++++++++++++++++++++
+ 4 files changed, 90 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+index 31addc5..cbd40c7 100644
+--- a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
++++ b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_app.h
+@@ -312,6 +312,7 @@ typedef enum {
+     MM_CAMERA_LIB_FLASH,
+     MM_CAMERA_LIB_FPS_RANGE,
+     MM_CAMERA_LIB_WNR_ENABLE,
++    MM_CAMERA_LIB_SET_TINTLESS,
+ } mm_camera_lib_commands;
+ 
+ typedef struct {
+diff --git a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_main_menu.h b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_main_menu.h
+index d1be285..06e3827 100644
+--- a/QCamera2/stack/mm-camera-test/inc/mm_qcamera_main_menu.h
++++ b/QCamera2/stack/mm-camera-test/inc/mm_qcamera_main_menu.h
+@@ -51,6 +51,8 @@ typedef enum
+   START_PREVIEW,
+   STOP_PREVIEW,
+   SET_WHITE_BALANCE,
++  SET_TINTLESS_ENABLE,
++  SET_TINTLESS_DISABLE,
+   SET_EXP_METERING,
+   GET_CTRL_VALUE,
+   TOGGLE_AFR,
+@@ -80,6 +82,8 @@ typedef enum
+   ACTION_START_PREVIEW,
+   ACTION_STOP_PREVIEW,
+   ACTION_SET_WHITE_BALANCE,
++  ACTION_SET_TINTLESS_ENABLE,
++  ACTION_SET_TINTLESS_DISABLE,
+   ACTION_SET_EXP_METERING,
+   ACTION_GET_CTRL_VALUE,
+   ACTION_TOGGLE_AFR,
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index 33771d6..c6140f1 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -1501,6 +1501,39 @@ ERROR:
+     return rc;
+ }
+ 
++int setTintless(mm_camera_test_obj_t *test_obj, int tintless)
++{
++    int rc = MM_CAMERA_OK;
++
++    rc = initBatchUpdate(test_obj);
++    if (rc != MM_CAMERA_OK) {
++        CDBG_ERROR("%s: Batch camera parameter update failed\n", __func__);
++        goto ERROR;
++    }
++
++    int32_t value = tintless;
++
++    rc = AddSetParmEntryToBatch(test_obj,
++                                CAM_INTF_PARM_TINTLESS,
++                                sizeof(value),
++                                &value);
++    if (rc != MM_CAMERA_OK) {
++        CDBG_ERROR("%s: Contrast parameter not added to batch\n", __func__);
++        goto ERROR;
++    }
++
++    rc = commitSetBatch(test_obj);
++    if (rc != MM_CAMERA_OK) {
++        CDBG_ERROR("%s: Batch parameters commit failed\n", __func__);
++        goto ERROR;
++    }
++
++    CDBG_ERROR("%s:  set Tintless to: %d", __func__, value);
++
++ERROR:
++    return rc;
++}
++
+ int setSaturation(mm_camera_test_obj_t *test_obj, int saturation)
+ {
+     int rc = MM_CAMERA_OK;
+@@ -1787,7 +1820,6 @@ int tuneserver_capture(mm_camera_lib_handle *lib_handle,
+     int rc = 0;
+ 
+     printf("Take jpeg snapshot\n");
+-
+     if ( lib_handle->stream_running ) {
+ 
+         if ( lib_handle->test_obj.zsl_enabled) {
+@@ -2183,6 +2215,17 @@ int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
+                 }
+             }
+             break;
++        case MM_CAMERA_LIB_SET_TINTLESS:
++            if ( NULL != in_data ) {
++                int tintless = *(( int * )in_data);
++                rc = setTintless(&handle->test_obj, tintless);
++                if (rc != MM_CAMERA_OK) {
++                        CDBG_ERROR("%s: enlabe/disable:%d tintless() err=%d\n",
++                                   __func__, tintless, rc);
++                        goto EXIT;
++                }
++            }
++            break;
+         case MM_CAMERA_LIB_BRIGHTNESS:
+             if ( NULL != in_data ) {
+                 int brightness = *(( int * )in_data);
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
+index cbd808c..fd68f73 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
+@@ -89,6 +89,8 @@ const CAMERA_MAIN_MENU_TBL_T camera_main_menu_tbl[] = {
+   {START_PREVIEW,               "Start preview"},
+   {STOP_PREVIEW,               "Stop preview/video"},
+   {SET_WHITE_BALANCE,          "Set white balance mode"},
++  {SET_TINTLESS_ENABLE,        "Set Tintless Enable"},
++  {SET_TINTLESS_DISABLE,       "Set Tintless Disable"},
+   {SET_EXP_METERING,           "Set exposure metering mode"},
+   {GET_CTRL_VALUE,             "Get control value menu"},
+   {TOGGLE_AFR,                 "Toggle auto frame rate. Default fixed frame rate"},
+@@ -307,6 +309,18 @@ int next_menu(menu_id_change_t current_menu_id, char keypress, camera_action_t *
+           CDBG("next_menu_id = MENU_ID_WHITEBALANCECHANGE = %d\n", next_menu_id);
+           break;
+ 
++        case SET_TINTLESS_ENABLE:
++          * action_id_ptr = ACTION_SET_TINTLESS_ENABLE;
++          next_menu_id = MENU_ID_MAIN;
++          CDBG("next_menu_id = MENU_ID_TINTLESSENABLE = %d\n", next_menu_id);
++          break;
++
++        case SET_TINTLESS_DISABLE:
++          * action_id_ptr = ACTION_SET_TINTLESS_DISABLE;
++          next_menu_id = MENU_ID_MAIN;
++          CDBG("next_menu_id = MENU_ID_TINTLESSDISABLE = %d\n", next_menu_id);
++          break;
++
+         case SET_EXP_METERING:
+           next_menu_id = MENU_ID_EXPMETERINGCHANGE;
+           CDBG("next_menu_id = MENU_ID_EXPMETERINGCHANGE = %d\n", next_menu_id);
+@@ -1662,6 +1676,7 @@ static int submain()
+     snap_dim.width = DEFAULT_SNAPSHOT_WIDTH;
+     snap_dim.height = DEFAULT_SNAPSHOT_HEIGHT;
+     cam_scene_mode_type default_scene= CAM_SCENE_MODE_OFF;
++    int set_tintless= 0;
+ 
+     mm_camera_test_obj_t test_obj;
+     memset(&test_obj, 0, sizeof(mm_camera_test_obj_t));
+@@ -1752,6 +1767,32 @@ static int submain()
+                 set_whitebalance(&lib_handle, action_param);
+                 break;
+ 
++            case ACTION_SET_TINTLESS_ENABLE:
++                CDBG("Selection for the Tintless enable changes\n");
++                set_tintless = 1;
++                rc =  mm_camera_lib_send_command(&lib_handle,
++                                                 MM_CAMERA_LIB_SET_TINTLESS,
++                                                 &set_tintless,
++                                                 NULL);
++                if (rc != MM_CAMERA_OK) {
++                    CDBG_ERROR("%s:mm_camera_lib_send_command() err=%d\n", __func__, rc);
++                    goto ERROR;
++                }
++                break;
++
++            case ACTION_SET_TINTLESS_DISABLE:
++                CDBG("Selection for the Tintless disable changes\n");
++                set_tintless = 0;
++                rc =  mm_camera_lib_send_command(&lib_handle,
++                                                 MM_CAMERA_LIB_SET_TINTLESS,
++                                                 &set_tintless,
++                                                 NULL);
++                if (rc != MM_CAMERA_OK) {
++                    CDBG_ERROR("%s:mm_camera_lib_send_command() err=%d\n", __func__, rc);
++                    goto ERROR;
++                }
++                break;
++
+             case ACTION_SET_EXP_METERING:
+                 CDBG("Selection for the Exposure Metering changes\n");
+                 set_exp_metering(&lib_handle, action_param);
+-- 
+1.8.3.1
+

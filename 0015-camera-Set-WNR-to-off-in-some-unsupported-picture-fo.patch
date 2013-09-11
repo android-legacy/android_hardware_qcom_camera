@@ -1,0 +1,40 @@
+From 07cb277708035e09d7bdcb7a81f80ac3856aed0a Mon Sep 17 00:00:00 2001
+From: Yu Yang <yuyang@codeaurora.org>
+Date: Fri, 6 Sep 2013 11:22:08 +0800
+Subject: [PATCH 015/176] camera: Set WNR to off in some unsupported picture
+ format
+
+Only NV21 and NV61 formats are supported in denoise lib.
+When choose YUV422SP, picture format is NV16, set WNR to off.
+
+Crs-fixed: 538769
+Change-Id: Id386b094dccf915faa205898e2a72275556bf903
+---
+ QCamera2/HAL/QCameraParameters.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index b6a3912..38a8e41 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -2797,6 +2797,17 @@ int32_t QCameraParameters::setZslMode(const QCameraParameters& params)
+  *==========================================================================*/
+ int32_t QCameraParameters::setWaveletDenoise(const QCameraParameters& params)
+ {
++    const char *str_pf = params.getPictureFormat();
++    int32_t pictureFormat =
++        lookupAttr(PICTURE_TYPES_MAP,
++                   sizeof(PICTURE_TYPES_MAP) / sizeof(QCameraMap),
++                   str_pf);
++    if (pictureFormat != NAME_NOT_FOUND) {
++        if (CAM_FORMAT_YUV_422_NV16 == pictureFormat) {
++            ALOGE("NV16 format isn't supported in denoise lib!");
++            return setWaveletDenoise(DENOISE_OFF);
++        }
++    }
+     const char *str = params.get(KEY_QC_DENOISE);
+     const char *prev_str = get(KEY_QC_DENOISE);
+     if (str != NULL) {
+-- 
+1.8.3.1
+

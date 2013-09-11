@@ -1,0 +1,102 @@
+From 28e66725beee1e39d8a7b22b4242843c9827e232 Mon Sep 17 00:00:00 2001
+From: Krupal Divvela <kdivvela@codeaurora.org>
+Date: Wed, 14 Aug 2013 12:53:56 +0530
+Subject: [PATCH 005/176] Qcamera2: Apply WNR only for main image
+
+Apply wavelet denoise only for main image
+and not for thumbnail. This change also skips
+thumbnail stream if no other reprocessing
+is required.
+
+Change-Id: Ia7458aadb0efa939df1e34633faac01a5d391152
+---
+ QCamera2/HAL/QCameraChannel.cpp  | 26 ++++++++++++++++++--------
+ QCamera2/HAL/QCameraPostProc.cpp | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 46 insertions(+), 8 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraChannel.cpp b/QCamera2/HAL/QCameraChannel.cpp
+index f08e319..313ca6a 100644
+--- a/QCamera2/HAL/QCameraChannel.cpp
++++ b/QCamera2/HAL/QCameraChannel.cpp
+@@ -716,14 +716,22 @@ int32_t QCameraReprocessChannel::addReprocStreamsFromSource(QCameraAllocator& al
+                 continue;
+             }
+ 
+-            if (param.isHDREnabled() && !param.isHDRThumbnailProcessNeeded() &&
+-                (pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
+-                pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
+-                pStream->isOrignalTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
+-                pStream->isOrignalTypeOf(CAM_STREAM_TYPE_POSTVIEW))) {
+-
+-                  // Skip thumbnail stream reprocessing
+-                  continue;
++            if(pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
++               pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW) ||
++               pStream->isOrignalTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
++               pStream->isOrignalTypeOf(CAM_STREAM_TYPE_POSTVIEW)) {
++                  if (param.isHDREnabled() && !param.isHDRThumbnailProcessNeeded()){
++                      // Skip thumbnail stream reprocessing in HDR
++                      continue;
++                  }
++                  uint32_t feature_mask = config.feature_mask;
++                  //Don't do WNR for thumbnail
++                  feature_mask &= ~CAM_QCOM_FEATURE_DENOISE2D;
++                  if(!feature_mask) {
++                    // Skip thumbnail stream reprocessing since no other
++                    //reprocessing is enabled.
++                      continue;
++                  }
+             }
+ 
+             pStreamInfoBuf = allocator.allocateStreamInfoBuf(CAM_STREAM_TYPE_OFFLINE_PROC);
+@@ -754,6 +762,8 @@ int32_t QCameraReprocessChannel::addReprocStreamsFromSource(QCameraAllocator& al
+             if (!(pStream->isTypeOf(CAM_STREAM_TYPE_SNAPSHOT) ||
+                 pStream->isOrignalTypeOf(CAM_STREAM_TYPE_SNAPSHOT))) {
+                 streamInfo->reprocess_config.pp_feature_config.feature_mask &= ~CAM_QCOM_FEATURE_CAC;
++                //Don't do WNR for thumbnail
++                streamInfo->reprocess_config.pp_feature_config.feature_mask &= ~CAM_QCOM_FEATURE_DENOISE2D;
+             }
+             if (streamInfo->reprocess_config.pp_feature_config.feature_mask & CAM_QCOM_FEATURE_ROTATION) {
+                 if (streamInfo->reprocess_config.pp_feature_config.rotation == ROTATE_90 ||
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 5fb67db..274ab65 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -1107,6 +1107,34 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+        return BAD_VALUE;
+     }
+ 
++    //Sometimes thumbnail might be skipped in reprocess. Reprocessed channel will not have
++    //thumbnail in such case.  Hence, look through reprocess source superbuf.
++    if (thumb_frame == NULL && jpeg_job_data->src_reproc_frame != NULL) {
++        mm_camera_super_buf_t *src_reproc_frame = jpeg_job_data->src_reproc_frame;
++        QCameraChannel *pSrcReprocChannel = m_parent->getChannelByHandle(src_reproc_frame->ch_id);
++        if (pSrcReprocChannel == NULL) {
++            ALOGE("%s: No corresponding channel (ch_id = %d) exist, return here",
++                __func__, src_reproc_frame->ch_id);
++            return BAD_VALUE;
++        }
++        // find thumnail frame
++        for (int i = 0; i < src_reproc_frame->num_bufs; i++) {
++            QCameraStream *pStream =
++                pSrcReprocChannel->getStreamByHandle(src_reproc_frame->bufs[i]->stream_id);
++            if (pStream != NULL) {
++                if (pStream->isTypeOf(CAM_STREAM_TYPE_PREVIEW) ||
++                    pStream->isTypeOf(CAM_STREAM_TYPE_POSTVIEW)) {
++                    thumb_stream = pStream;
++                    thumb_frame = src_reproc_frame->bufs[i];
++                }
++            }
++        }
++    }
++
++    if(NULL == thumb_frame){
++       ALOGV("%s : Thumbnail frame does not exist", __func__);
++    }
++
+     QCameraMemory *memObj = (QCameraMemory *)main_frame->mem_info;
+     if (NULL == memObj) {
+         ALOGE("%s : Memeory Obj of main frame is NULL", __func__);
+-- 
+1.8.3.1
+

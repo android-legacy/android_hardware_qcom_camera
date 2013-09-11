@@ -1,0 +1,209 @@
+From 2df52441139ebc7eefd6b5dea66a4d16b50c67ba Mon Sep 17 00:00:00 2001
+From: Eric Ho <yinlokh@codeaurora.org>
+Date: Tue, 30 Jul 2013 16:15:33 -0700
+Subject: [PATCH 010/176] QCamera2HAL: add video rotation support
+
+ - add a key for video rotation which allows for changing
+   video stream rotation prior to adding the channel.
+ - this information is propagated via streamInfo pp_config when
+   creating the video stream.
+ - dimensions are swapped in streaminfo if rotation is 90 or
+   270.
+ - skip swapping dimensions in calculating stride and
+   scanline offsets if stream type is video because stream info
+   is already swapped.
+
+Change-Id: I520ec3d8d19c12e53ed23baeb6cda45ec90e04c1
+---
+ QCamera2/HAL/QCamera2HWI.cpp                       |  2 +-
+ QCamera2/HAL/QCameraParameters.cpp                 | 91 ++++++++++++++++++++++
+ QCamera2/HAL/QCameraParameters.h                   |  7 ++
+ .../mm-camera-interface/src/mm_camera_stream.c     |  3 +-
+ 4 files changed, 101 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index ed5a0bb..4296329 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -1564,8 +1564,8 @@ QCameraHeapMemory *QCamera2HardwareInterface::allocateStreamInfoBuf(
+     streamInfo->stream_type = stream_type;
+     rc = mParameters.getStreamFormat(stream_type, streamInfo->fmt);
+     rc = mParameters.getStreamDimension(stream_type, streamInfo->dim);
++    rc = mParameters.getStreamRotation(stream_type, streamInfo->pp_config, streamInfo->dim);
+     streamInfo->num_bufs = getBufNumRequired(stream_type);
+-
+     streamInfo->streaming_mode = CAM_STREAMING_MODE_CONTINUOUS;
+     switch (stream_type) {
+     case CAM_STREAM_TYPE_SNAPSHOT:
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index 5749e06..b67069a 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -107,6 +107,7 @@ const char QCameraParameters::KEY_QC_AUTO_HDR_ENABLE [] = "auto-hdr-enable";
+ const char QCameraParameters::KEY_QC_SNAPSHOT_BURST_NUM[] = "snapshot-burst-num";
+ const char QCameraParameters::KEY_QC_SNAPSHOT_FD_DATA[] = "snapshot-fd-data-enable";
+ const char QCameraParameters::KEY_QC_TINTLESS_ENABLE[] = "tintless";
++const char QCameraParameters::KEY_QC_VIDEO_ROTATION[] = "video-rotation";
+ 
+ // Values for effect settings.
+ const char QCameraParameters::EFFECT_EMBOSS[] = "emboss";
+@@ -2035,6 +2036,33 @@ int32_t  QCameraParameters::setISOValue(const QCameraParameters& params)
+ }
+ 
+ /*===========================================================================
++ * FUNCTION   : setVideoRotation
++ *
++ * DESCRIPTION: set rotation value from user setting
++ *
++ * PARAMETERS :
++ *   @params  : user setting parameters
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
++int32_t QCameraParameters::setVideoRotation(const QCameraParameters& params)
++{
++    int rotation = params.getInt(KEY_QC_VIDEO_ROTATION);
++    if (rotation != -1) {
++        if (rotation == 0 || rotation == 90 ||
++            rotation == 180 || rotation == 270) {
++            set(KEY_QC_VIDEO_ROTATION, rotation);
++        } else {
++            ALOGE("Invalid rotation value: %d", rotation);
++            return BAD_VALUE;
++        }
++    }
++    return NO_ERROR;
++}
++
++/*===========================================================================
+  * FUNCTION   : setRotation
+  *
+  * DESCRIPTION: set rotation value from user setting
+@@ -3015,6 +3043,7 @@ int32_t QCameraParameters::updateParameters(QCameraParameters& params,
+     if ((rc = setJpegQuality(params)))                  final_rc = rc;
+     if ((rc = setOrientation(params)))                  final_rc = rc;
+     if ((rc = setRotation(params)))                     final_rc = rc;
++    if ((rc = setVideoRotation(params)))                final_rc = rc;
+     if ((rc = setNoDisplayMode(params)))                final_rc = rc;
+     if ((rc = setZslMode(params)))                      final_rc = rc;
+     if ((rc = setZslAttributes(params)))                final_rc = rc;
+@@ -5239,6 +5268,68 @@ void QCameraParameters::getTouchIndexAf(int *x, int *y)
+  *              NO_ERROR  -- success
+  *              none-zero failure code
+  *==========================================================================*/
++int32_t QCameraParameters::getStreamRotation(cam_stream_type_t streamType,
++                                            cam_pp_feature_config_t &featureConfig,
++                                            cam_dimension_t &dim)
++{
++    int32_t ret = NO_ERROR;
++    int rotationParam = getInt(KEY_QC_VIDEO_ROTATION);
++    featureConfig.rotation = ROTATE_0;
++    int swapDim = 0;
++    switch (streamType) {
++    case CAM_STREAM_TYPE_VIDEO:
++           switch(rotationParam) {
++            case 90:
++               featureConfig.feature_mask |= CAM_QCOM_FEATURE_ROTATION;
++               featureConfig.rotation = ROTATE_90;
++               swapDim = 1;
++               break;
++            case 180:
++               featureConfig.feature_mask |= CAM_QCOM_FEATURE_ROTATION;
++               featureConfig.rotation = ROTATE_180;
++               break;
++            case 270:
++               featureConfig.feature_mask |= CAM_QCOM_FEATURE_ROTATION;
++               featureConfig.rotation = ROTATE_270;
++               swapDim = 1;
++              break;
++            default:
++               featureConfig.rotation = ROTATE_0;
++        }
++        break;
++    case CAM_STREAM_TYPE_PREVIEW:
++    case CAM_STREAM_TYPE_POSTVIEW:
++    case CAM_STREAM_TYPE_SNAPSHOT:
++    case CAM_STREAM_TYPE_RAW:
++    case CAM_STREAM_TYPE_METADATA:
++    case CAM_STREAM_TYPE_OFFLINE_PROC:
++    case CAM_STREAM_TYPE_DEFAULT:
++    default:
++        break;
++    }
++
++    if (swapDim > 0) {
++        int w = 0;
++        w = dim.width;
++        dim.width = dim.height;
++        dim.height = w;
++    }
++    return ret;
++}
++
++/*===========================================================================
++ * FUNCTION   : getStreamFormat
++ *
++ * DESCRIPTION: get stream format by its type
++ *
++ * PARAMETERS :
++ *   @streamType : [input] stream type
++ *   @format     : [output] stream format
++ *
++ * RETURN     : int32_t type of status
++ *              NO_ERROR  -- success
++ *              none-zero failure code
++ *==========================================================================*/
+ int32_t QCameraParameters::getStreamFormat(cam_stream_type_t streamType,
+                                             cam_format_t &format)
+ {
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 3bda408..290bcb6 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -219,6 +219,9 @@ public:
+     //Auto HDR enable
+     static const char KEY_QC_AUTO_HDR_ENABLE[];
+ 
++    // video rotation
++    static const char KEY_QC_VIDEO_ROTATION[];
++
+     //Redeye Reduction
+     static const char KEY_QC_REDEYE_REDUCTION[];
+     static const char KEY_QC_SUPPORTED_REDEYE_REDUCTION[];
+@@ -430,6 +433,9 @@ public:
+     int32_t updateParameters(QCameraParameters&, bool &needRestart);
+     int32_t commitParameters();
+     int getPreviewHalPixelFormat() const;
++    int32_t getStreamRotation(cam_stream_type_t streamType,
++                               cam_pp_feature_config_t &featureConfig,
++                               cam_dimension_t &dim);
+     int32_t getStreamFormat(cam_stream_type_t streamType,
+                              cam_format_t &format);
+     int32_t getStreamDimension(cam_stream_type_t streamType,
+@@ -534,6 +540,7 @@ private:
+     int32_t setZoom(const QCameraParameters& );
+     int32_t setISOValue(const QCameraParameters& );
+     int32_t setRotation(const QCameraParameters& );
++    int32_t setVideoRotation(const QCameraParameters& );
+     int32_t setFlash(const QCameraParameters& );
+     int32_t setAecLock(const QCameraParameters& );
+     int32_t setAwbLock(const QCameraParameters& );
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 3705baf..3c28e2d 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -2652,7 +2652,8 @@ int32_t mm_stream_calc_offset(mm_stream_t *my_obj)
+     int32_t rc = 0;
+ 
+     cam_dimension_t dim = my_obj->stream_info->dim;
+-    if (my_obj->stream_info->pp_config.feature_mask & CAM_QCOM_FEATURE_ROTATION) {
++    if (my_obj->stream_info->pp_config.feature_mask & CAM_QCOM_FEATURE_ROTATION &&
++        my_obj->stream_info->stream_type != CAM_STREAM_TYPE_VIDEO) {
+         if (my_obj->stream_info->pp_config.rotation == ROTATE_90 ||
+             my_obj->stream_info->pp_config.rotation == ROTATE_270) {
+             // rotated by 90 or 270, need to switch width and height
+-- 
+1.8.3.1
+

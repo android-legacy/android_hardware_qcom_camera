@@ -1,0 +1,187 @@
+From c1a40454e27a7cf75a1f00054ed7ccaaecbe7451 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Wed, 11 Sep 2013 11:55:11 -0700
+Subject: [PATCH 006/176] Revert "QCamera2: Adds performance lock during
+ snapshot"
+
+This reverts commit 9ad5923e0e4c2b17cc174e7e50bdb645fc7a60d3.
+
+Change-Id: I5878fbe8de38e6cef4a1e19576558e0329f58f54
+---
+ QCamera2/HAL/Android.mk      | 15 ----------
+ QCamera2/HAL/QCamera2HWI.cpp | 65 +-------------------------------------------
+ QCamera2/HAL/QCamera2HWI.h   |  7 +----
+ 3 files changed, 2 insertions(+), 85 deletions(-)
+
+diff --git a/QCamera2/HAL/Android.mk b/QCamera2/HAL/Android.mk
+index 09b3e43..ea39404 100644
+--- a/QCamera2/HAL/Android.mk
++++ b/QCamera2/HAL/Android.mk
+@@ -43,21 +43,6 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ LOCAL_SHARED_LIBRARIES := libcamera_client liblog libhardware libutils libcutils libdl
+ LOCAL_SHARED_LIBRARIES += libmmcamera_interface libmmjpeg_interface
+ 
+-
+-#Performance lock disabled by default
+-#HAL_PERF_LOCK:=true
+-
+-ifdef HAL_PERF_LOCK
+-
+-LOCAL_C_INCLUDES += vendor/qcom/proprietary/android-perf-noship/inc \
+-                    vendor/qcom/proprietary/android-perf-noship/libqc-opt
+-
+-LOCAL_SHARED_LIBRARIES += libqc-opt
+-
+-LOCAL_CFLAGS += -DUSE_PERFORMANCE_LOCK
+-
+-endif
+-
+ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
+ LOCAL_MODULE := camera.$(TARGET_BOARD_PLATFORM)
+ LOCAL_MODULE_TAGS := optional
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index 5fa1c31..ed5a0bb 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -38,13 +38,6 @@
+ #include "QCamera2HWI.h"
+ #include "QCameraMem.h"
+ 
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-#include <performance.h>
+-#include <qc-performance.h>
+-
+-#endif
+-
+ #define MAP_TO_DRIVER_COORDINATE(val, base, scale, offset) (val * scale / base + offset)
+ #define CAMERA_MIN_STREAMING_BUFFERS     3
+ #define CAMERA_MIN_JPEG_ENCODING_BUFFERS 2
+@@ -89,6 +82,7 @@ camera_device_ops_t QCamera2HardwareInterface::mCameraOps = {
+     dump:                       QCamera2HardwareInterface::dump,
+ };
+ 
++
+ int32_t QCamera2HardwareInterface::getEffectValue(const char *effect)
+ {
+     uint32_t cnt = 0;
+@@ -609,21 +603,6 @@ int QCamera2HardwareInterface::take_picture(struct camera_device *device)
+         return BAD_VALUE;
+     }
+     ALOGE("[KPI Perf] %s: E PROFILE_TAKE_PICTURE", __func__);
+-
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    int32_t perf_lock_params[] = {  CPUS_ONLINE_MAX,
+-                                    CPU0_MIN_FREQ_TURBO_MAX,
+-                                    CPU1_MIN_FREQ_TURBO_MAX,
+-                                    CPU2_MIN_FREQ_TURBO_MAX,
+-                                    CPU3_MIN_FREQ_TURBO_MAX };
+-    hw->mPerfLockHandle = 0;
+-    hw->mPerfLockHandle = perf_lock_acq(hw->mPerfLockHandle,
+-                                    INDEFINITE_DURATION,
+-                                    perf_lock_params,
+-                                    sizeof(perf_lock_params) / sizeof(int32_t));
+-#endif
+-
+     hw->lockAPI();
+ 
+     /* Prepare snapshot in case LED needs to be flashed */
+@@ -646,19 +625,6 @@ int QCamera2HardwareInterface::take_picture(struct camera_device *device)
+ 
+     hw->unlockAPI();
+     ALOGD("[KPI Perf] %s: X", __func__);
+-
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    if ( ( NO_ERROR != ret ) && ( -1 != hw->mPerfLockHandle ) ) {
+-        ALOGE("%s : take_picture failed releasing perf handle: %d",
+-              __func__,
+-              hw->mPerfLockHandle);
+-        perf_lock_rel(hw->mPerfLockHandle);
+-        hw->mPerfLockHandle = -1;
+-    }
+-
+-#endif
+-
+     return ret;
+ }
+ 
+@@ -1015,11 +981,6 @@ QCamera2HardwareInterface::QCamera2HardwareInterface(int cameraId)
+     }
+ #endif
+ 
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    mPerfLockHandle = -1;
+-
+-#endif
+ }
+ 
+ /*===========================================================================
+@@ -2247,18 +2208,6 @@ int QCamera2HardwareInterface::cancelPicture()
+     //stop post processor
+     m_postprocessor.stop();
+ 
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    if ( -1 != mPerfLockHandle ) {
+-        ALOGD("%s : Capture finished releasing perf handle: %d",
+-              __func__,
+-              mPerfLockHandle);
+-        perf_lock_rel(mPerfLockHandle);
+-        mPerfLockHandle = -1;
+-    }
+-
+-#endif
+-
+     if (mParameters.isZSLMode()) {
+         QCameraPicChannel *pZSLChannel =
+             (QCameraPicChannel *)m_channels[QCAMERA_CH_TYPE_ZSL];
+@@ -2325,18 +2274,6 @@ int QCamera2HardwareInterface::cancelLiveSnapshot()
+ {
+     int rc = NO_ERROR;
+ 
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    if ( -1 != mPerfLockHandle ) {
+-        ALOGD("%s : Capture finished releasing perf handle: %d",
+-              __func__,
+-              mPerfLockHandle);
+-        perf_lock_rel(mPerfLockHandle);
+-        mPerfLockHandle = -1;
+-    }
+-
+-#endif
+-
+     //stop post processor
+     m_postprocessor.stop();
+ 
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index 6eb7a5c..a38ca84 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -460,6 +460,7 @@ private:
+     bool m_bPreviewStarted;             //flag indicates first preview frame callback is received
+     bool m_bRecordStarted;             //flag indicates Recording is started for first time
+ 
++
+     // if auto focus is running, in other words, when auto_focus is called from service,
+     // and beforeany focus callback/cancel_focus happens. This flag is not an indication
+     // of whether lens is moving or not.
+@@ -475,12 +476,6 @@ private:
+     bool m_HDRSceneEnabled;
+     bool mLongshotEnabled;
+ 
+-#ifdef USE_PERFORMANCE_LOCK
+-
+-    int mPerfLockHandle;  // Performance lock library handle
+-
+-#endif
+-
+     int32_t m_max_pic_width;
+     int32_t m_max_pic_height;
+ };
+-- 
+1.8.3.1
+

@@ -1,0 +1,39 @@
+From d008dd70e94672c61b9f06e891634ae191d19a2f Mon Sep 17 00:00:00 2001
+From: Suresh Vankadara <svankada@codeaurora.org>
+Date: Wed, 22 Jan 2014 15:07:42 +0530
+Subject: [PATCH 095/176] camera: fix sensor info parsing logic
+
+Fix parsing logic as below to fix camera preview rotation
+and camera app detection in UI.
+
+0-7: media entity flags
+8-15: mount angle
+15-23: facing
+
+Change-Id: I8e4fcefb9bbfc34859fb69ae4f06fdcffe624e4c
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+index fef2090..e0f81c2 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_interface.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions are
+@@ -1235,7 +1235,7 @@ void get_sensor_info()
+             }
+             if(entity.type == MEDIA_ENT_T_V4L2_SUBDEV &&
+                 entity.group_id == MSM_CAMERA_SUBDEV_SENSOR) {
+-                temp = entity.flags;
++                temp = entity.flags >> 8;
+                 mount_angle = (temp & 0xFF) * 90;
+                 facing = (temp >> 8);
+                 ALOGD("index = %d flag = %x mount_angle = %d facing = %d\n"
+-- 
+1.8.3.1
+

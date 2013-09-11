@@ -1,0 +1,94 @@
+From 3bec0d88fec7d8d360a9d3f5a41c28cbca490811 Mon Sep 17 00:00:00 2001
+From: Emilian Peev <epeevs@codeaurora.org>
+Date: Wed, 11 Dec 2013 16:34:43 +0200
+Subject: [PATCH 101/176] QCamera2: Add support for early shutter callback
+
+- This change will add support for triggering
+  shutter callback immediately after image capture
+  during longshot. This behavior is not standard
+  and needs to be enabled explicitly via this
+  Android property:
+  "persist.camera.feature.shutter -> 0/1"
+
+Change-Id: I5fd2033d468d9002088522022f79a0cbd8759fff
+CRs-Fixed: 581608
+---
+ QCamera2/HAL/QCamera2HWI.cpp     | 20 ++++++++++++++++++++
+ QCamera2/HAL/QCamera2HWI.h       |  1 +
+ QCamera2/HAL/QCameraPostProc.cpp |  9 ++++++---
+ 3 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWI.cpp b/QCamera2/HAL/QCamera2HWI.cpp
+index d114049..f284bd6 100644
+--- a/QCamera2/HAL/QCamera2HWI.cpp
++++ b/QCamera2/HAL/QCamera2HWI.cpp
+@@ -5208,4 +5208,24 @@ void QCamera2HardwareInterface::copyList(cam_dimension_t* src_list,
+    }
+ }
+ 
++/*===========================================================================
++ * FUNCTION   : isCaptureShutterEnabled
++ *
++ * DESCRIPTION: Check whether shutter should be triggered immediately after
++ *              capture
++ *
++ * PARAMETERS :
++ *
++ * RETURN     : true - regular capture
++ *              false - other type of capture
++ *==========================================================================*/
++bool QCamera2HardwareInterface::isCaptureShutterEnabled()
++{
++    char prop[PROPERTY_VALUE_MAX];
++    memset(prop, 0, sizeof(prop));
++    property_get("persist.camera.feature.shutter", prop, "0");
++    int enableShutter = atoi(prop);
++    return enableShutter == 1;
++}
++
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCamera2HWI.h b/QCamera2/HAL/QCamera2HWI.h
+index 18d1a29..c553ffe 100644
+--- a/QCamera2/HAL/QCamera2HWI.h
++++ b/QCamera2/HAL/QCamera2HWI.h
+@@ -313,6 +313,7 @@ private:
+     bool needDebugFps();
+     bool isCACEnabled();
+     bool isAFRunning();
++    bool isCaptureShutterEnabled();
+     bool needReprocess();
+     bool needRotationReprocess();
+     bool needScaleReprocess();
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 27c44bb..258ba72 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -552,7 +552,10 @@ int32_t QCameraPostProcessor::processData(mm_camera_super_buf_t *frame)
+     }
+ 
+     if (m_parent->needReprocess()) {
+-        if ( !m_parent->isLongshotEnabled() && !m_parent->m_stateMachine.isNonZSLCaptureRunning()) {
++        if ((!m_parent->isLongshotEnabled() &&
++             !m_parent->m_stateMachine.isNonZSLCaptureRunning()) ||
++            (m_parent->isLongshotEnabled() &&
++             m_parent->isCaptureShutterEnabled())) {
+             //play shutter sound
+             m_parent->playShutter();
+         }
+@@ -766,11 +769,11 @@ int32_t QCameraPostProcessor::processPPData(mm_camera_super_buf_t *frame)
+         return processRawData(frame);
+     }
+ 
+-    if ( m_parent->isLongshotEnabled() ) {
++    if (m_parent->isLongshotEnabled() &&
++         !m_parent->isCaptureShutterEnabled()) {
+         // play shutter sound for longshot
+         // after reprocess is done
+         // TODO: Move this after CAC done event
+-
+         m_parent->playShutter();
+     }
+ 
+-- 
+1.8.3.1
+

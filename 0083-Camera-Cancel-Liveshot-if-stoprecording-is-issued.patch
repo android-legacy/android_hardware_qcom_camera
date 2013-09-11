@@ -1,0 +1,36 @@
+From 7459cedb75b4d142a2a96d60300c11084511fb54 Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Tue, 7 Jan 2014 14:23:52 +0530
+Subject: [PATCH 083/176] Camera: Cancel Liveshot if stoprecording is issued.
+
+While liveshot is in progress, if stoprecording is issued,
+cancel liveshot so that liveshot related resources are properly
+cleaned up and state transition happens to previewing state.
+
+CRs-Fixed: 588698
+Change-Id: I7c64ab537c92265a2df7503bcd75ac6d8fea9c2c
+---
+ QCamera2/HAL/QCameraStateMachine.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index 2b4f149..f145358 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -2278,8 +2278,12 @@ int32_t QCameraStateMachine::procEvtVideoPicTakingState(qcamera_sm_evt_enum_t ev
+         break;
+     case QCAMERA_SM_EVT_STOP_RECORDING:
+         {
++            rc = m_parent->cancelLiveSnapshot();
++            m_state = QCAMERA_SM_STATE_RECORDING;
++
+             rc = m_parent->stopRecording();
+-            m_state = QCAMERA_SM_STATE_PREVIEW_PIC_TAKING;
++            m_state = QCAMERA_SM_STATE_PREVIEWING;
++
+             result.status = rc;
+             result.request_api = evt;
+             result.result_type = QCAMERA_API_RESULT_TYPE_DEF;
+-- 
+1.8.3.1
+

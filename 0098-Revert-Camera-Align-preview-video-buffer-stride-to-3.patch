@@ -1,0 +1,39 @@
+From 6d4db193d4502ac4c711a78e0b1704089838dd42 Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Tue, 11 Feb 2014 10:53:40 +0530
+Subject: [PATCH 098/176] Revert "Camera: Align preview/video buffer stride to
+ 32 bytes."
+
+If we pad preview buffers by 32, for some
+resolutions we see corrupted data in pcb
+
+Change-Id: I411e4bc7f8eead734f17fd4fa19dde43a0c75afe
+---
+ QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+index 4f65cef..0b77882 100644
+--- a/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
++++ b/QCamera2/stack/mm-camera-interface/src/mm_camera_stream.c
+@@ -1677,7 +1677,7 @@ int32_t mm_stream_calc_offset_preview(cam_format_t fmt,
+         /* 2 planes: Y + CbCr */
+         buf_planes->plane_info.num_planes = 2;
+ 
+-        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_32);
++        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_16);
+         scanline = PAD_TO_SIZE(dim->height, CAM_PAD_TO_2);
+ 
+         buf_planes->plane_info.mp[0].offset = 0;
+@@ -1689,7 +1689,7 @@ int32_t mm_stream_calc_offset_preview(cam_format_t fmt,
+         buf_planes->plane_info.mp[0].width = dim->width;
+         buf_planes->plane_info.mp[0].height = dim->height;
+ 
+-        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_32);
++        stride = PAD_TO_SIZE(dim->width, CAM_PAD_TO_16);
+         scanline = PAD_TO_SIZE(dim->height / 2, CAM_PAD_TO_2);
+         buf_planes->plane_info.mp[1].offset = 0;
+         buf_planes->plane_info.mp[1].len =
+-- 
+1.8.3.1
+

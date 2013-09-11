@@ -1,0 +1,40 @@
+From da52a5c9ef1ad3cf4f2ebd36dabe9c128e923c20 Mon Sep 17 00:00:00 2001
+From: Sai Kumar Sanagavarapu <ssanagav@codeaurora.org>
+Date: Thu, 24 Apr 2014 11:15:50 +0530
+Subject: [PATCH 126/176] Camera: Fix semwait and return sequence in
+ commitGetBatch.
+
+In QCameraParameters::commitGetBatch(), function returns
+before sem_wait. Hence change the sequence to properly
+wait for get_parm operation and then return the status.
+
+Change-Id: I2d55bbdad2177599717c9c6eaeb07ca20ebe858a
+---
+ QCamera2/HAL/QCameraParameters.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index e3d49b2..1868627 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -7397,14 +7397,14 @@ int32_t QCameraParameters::commitSetBatch()
+  *==========================================================================*/
+ int32_t QCameraParameters::commitGetBatch()
+ {
++    int32_t rc = NO_ERROR;
+     if (m_pParamBuf->num_entry > 0) {
+-        return m_pCamOpsTbl->ops->get_parms(m_pCamOpsTbl->camera_handle,
++        rc = m_pCamOpsTbl->ops->get_parms(m_pCamOpsTbl->camera_handle,
+                                                           (void *)m_pParamBuf);
+         ALOGD("%s:waiting for commitGetBatch to complete",__func__);
+         sem_wait(&m_pParamBuf->cam_sync_sem);
+-    } else {
+-        return NO_ERROR;
+     }
++    return rc;
+ }
+ 
+ /*===========================================================================
+-- 
+1.8.3.1
+

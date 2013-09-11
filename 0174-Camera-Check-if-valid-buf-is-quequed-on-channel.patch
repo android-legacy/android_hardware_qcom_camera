@@ -1,0 +1,33 @@
+From 9157067c6c185d049644c2c2f25752e1077dd476 Mon Sep 17 00:00:00 2001
+From: Ashok Raj Deenadayalan <adeena@codeaurora.org>
+Date: Wed, 1 Jan 2014 18:23:31 +0530
+Subject: [PATCH 174/176] Camera: Check if valid buf is quequed on channel
+
+Check for NULL on the buf passed to mm_channel_qbuf to avoid
+crash.
+
+CRs-Fixed: 581810
+Change-Id: I680f491f1e595894dbb2c3565a82d7d659beacd4
+---
+ QCamera/stack/mm-camera-interface/src/mm_camera_channel.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c b/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
+index d6d434c..8dfdc3d 100755
+--- a/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
++++ b/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
+@@ -1204,7 +1204,10 @@ int32_t mm_channel_qbuf(mm_channel_t *my_obj,
+                         mm_camera_buf_def_t *buf)
+ {
+     int32_t rc = -1;
+-    mm_stream_t* s_obj = mm_channel_util_get_stream_by_handler(my_obj, buf->stream_id);
++    mm_stream_t* s_obj = NULL;
++
++    if (NULL != buf)
++        s_obj = mm_channel_util_get_stream_by_handler(my_obj, buf->stream_id);
+ 
+     if (NULL != s_obj) {
+         rc = mm_stream_fsm_fn(s_obj,
+-- 
+1.8.3.1
+

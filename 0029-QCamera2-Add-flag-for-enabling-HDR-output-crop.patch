@@ -1,0 +1,102 @@
+From 0d6b270d1b0a59d2317e60d96387985ed9bb7ee1 Mon Sep 17 00:00:00 2001
+From: Ivan Evlogiev <ivanevlogiev@codeaurora.org>
+Date: Mon, 7 Oct 2013 17:13:24 -0700
+Subject: [PATCH 029/176] QCamera2: Add flag for enabling HDR output crop
+
+- HDR can decide to crop output image. So JPEG resolution
+will be different from the one requested by the user.
+In this case CTS test will fail. That's why by default
+HDR output cropping is disabled.
+
+HDR output cropping can be enabled with
+
+setprop persist.camera.hdr.outcrop "enable"
+
+Change-Id: I7855c5017cef3674d7b51179d231a695cfd394de
+---
+ QCamera2/HAL/QCameraParameters.cpp | 12 ++++++++++++
+ QCamera2/HAL/QCameraParameters.h   |  2 ++
+ QCamera2/HAL/QCameraPostProc.cpp   |  5 +++--
+ 3 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index ca14988..5e84def 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -580,6 +580,7 @@ QCameraParameters::QCameraParameters()
+       m_HDRSceneEnabled(false),
+       m_bHDRThumbnailProcessNeeded(true),
+       m_bHDR1xExtraBufferNeeded(true),
++      m_bHDROutputCropEnabled(false),
+       m_tempMap()
+ {
+     char value[PROPERTY_VALUE_MAX];
+@@ -647,6 +648,7 @@ QCameraParameters::QCameraParameters(const String8 &params)
+     m_HDRSceneEnabled(false),
+     m_bHDRThumbnailProcessNeeded(true),
+     m_bHDR1xExtraBufferNeeded(true),
++    m_bHDROutputCropEnabled(false),
+     m_tempMap()
+ {
+     memset(&m_LiveSnapshotSize, 0, sizeof(m_LiveSnapshotSize));
+@@ -3605,6 +3607,16 @@ int32_t QCameraParameters::initDefaultParameters()
+         }
+     }
+ 
++    // Set HDR output scaling
++    char value[PROPERTY_VALUE_MAX];
++
++    property_get("persist.camera.hdr.outcrop", value, VALUE_DISABLE);
++    if (strncmp(VALUE_ENABLE, value, sizeof(VALUE_ENABLE))) {
++      m_bHDROutputCropEnabled = false;
++    } else {
++      m_bHDROutputCropEnabled = true;
++    }
++
+     //Set Face Detection
+     set(KEY_QC_SUPPORTED_FACE_DETECTION, onOffValues);
+     set(KEY_QC_FACE_DETECTION, VALUE_OFF);
+diff --git a/QCamera2/HAL/QCameraParameters.h b/QCamera2/HAL/QCameraParameters.h
+index 0687b8e..e6605a5 100644
+--- a/QCamera2/HAL/QCameraParameters.h
++++ b/QCamera2/HAL/QCameraParameters.h
+@@ -506,6 +506,7 @@ public:
+     bool isYUVFrameInfoNeeded();
+     const char*getFrameFmtString(cam_format_t fmt);
+     bool isHDR1xExtraBufferNeeded() {return m_bHDR1xExtraBufferNeeded;}
++    bool isHDROutputCropEnabled() {return m_bHDROutputCropEnabled;}
+ 
+     bool isPreviewFlipChanged() { return m_bPreviewFlipChanged; };
+     bool isVideoFlipChanged() { return m_bVideoFlipChanged; };
+@@ -709,6 +710,7 @@ private:
+     bool m_HDRSceneEnabled; // Auto HDR indication
+     bool m_bHDRThumbnailProcessNeeded;        // if thumbnail need to be processed for HDR
+     bool m_bHDR1xExtraBufferNeeded;     // if extra frame with exposure compensation 0 during HDR is needed
++    bool m_bHDROutputCropEnabled;     // if HDR output frame need to be scaled to user resolution
+ 
+     DefaultKeyedVector<String8,String8> m_tempMap; // map for temororily store parameters to be set
+ };
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 42bc9e7..a08568b 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -1207,13 +1207,14 @@ int32_t QCameraPostProcessor::encodeData(qcamera_jpeg_data_t *jpeg_job_data,
+     main_stream->getFrameDimension(src_dim);
+ 
+     cam_dimension_t dst_dim;
++    bool hdr_output_crop = m_parent->mParameters.isHDROutputCropEnabled();
+ 
+-    if (crop.height) {
++    if (hdr_output_crop && crop.height) {
+         dst_dim.height = crop.height;
+     } else {
+         dst_dim.height = src_dim.height;
+     }
+-    if (crop.width) {
++    if (hdr_output_crop && crop.width) {
+         dst_dim.width = crop.width;
+     } else {
+         dst_dim.width = src_dim.width;
+-- 
+1.8.3.1
+

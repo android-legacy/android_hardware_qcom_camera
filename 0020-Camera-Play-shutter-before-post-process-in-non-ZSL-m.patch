@@ -1,0 +1,93 @@
+From fa8d9b372054318222b3f7e2872a03a02993b0cf Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Mon, 23 Sep 2013 16:09:07 +0530
+Subject: [PATCH 020/176] Camera: Play shutter before post process in non ZSL
+ mode
+
+To reduce the shutter lag, we play shutter
+before post processing is done
+
+Change-Id: I6ae72f9d2515cdc8dc1199e52fb8182a52d622ef
+CRs-Fixed: 540151
+---
+ QCamera2/HAL/QCamera2HWICallbacks.cpp |  5 +++++
+ QCamera2/HAL/QCameraPostProc.cpp      |  3 ++-
+ QCamera2/HAL/QCameraStateMachine.cpp  | 20 ++++++++++++++++++++
+ QCamera2/HAL/QCameraStateMachine.h    |  1 +
+ 4 files changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/HAL/QCamera2HWICallbacks.cpp b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+index 98a8341..0b31076 100644
+--- a/QCamera2/HAL/QCamera2HWICallbacks.cpp
++++ b/QCamera2/HAL/QCamera2HWICallbacks.cpp
+@@ -1057,6 +1057,11 @@ void QCamera2HardwareInterface::metadata_stream_cb_routine(mm_camera_super_buf_t
+     mm_camera_buf_def_t *frame = super_frame->bufs[0];
+     cam_metadata_info_t *pMetaData = (cam_metadata_info_t *)frame->buffer;
+ 
++    if(pme->m_stateMachine.isNonZSLCaptureRunning()&& pMetaData->is_meta_valid == 1) {
++       //Make shutter call back in non ZSL mode once raw frame is received from VFE.
++       pme->playShutter();
++    }
++
+     if (pMetaData->is_tuning_params_valid && pme->mParameters.getRecordingHintValue() == true) {
+         //Dump Tuning data for video
+         pme->dumpMetadataToFile(stream,frame,(char *)"Video");
+diff --git a/QCamera2/HAL/QCameraPostProc.cpp b/QCamera2/HAL/QCameraPostProc.cpp
+index 274ab65..42bc9e7 100644
+--- a/QCamera2/HAL/QCameraPostProc.cpp
++++ b/QCamera2/HAL/QCameraPostProc.cpp
+@@ -505,7 +505,8 @@ int32_t QCameraPostProcessor::processData(mm_camera_super_buf_t *frame)
+         processRawData(frame);
+     } else {
+         //play shutter sound
+-        m_parent->playShutter();
++        if(!m_parent->m_stateMachine.isNonZSLCaptureRunning())
++           m_parent->playShutter();
+ 
+         ALOGD("%s: no need offline reprocess, sending to jpeg encoding", __func__);
+         qcamera_jpeg_data_t *jpeg_job =
+diff --git a/QCamera2/HAL/QCameraStateMachine.cpp b/QCamera2/HAL/QCameraStateMachine.cpp
+index 07931c1..b3d2f91 100644
+--- a/QCamera2/HAL/QCameraStateMachine.cpp
++++ b/QCamera2/HAL/QCameraStateMachine.cpp
+@@ -2795,5 +2795,25 @@ bool QCameraStateMachine::isCaptureRunning()
+         return false;
+     }
+ }
++/*===========================================================================
++ * FUNCTION   : isNonZSLCaptureRunning
++ *
++ * DESCRIPTION: check if image capture is in process in non ZSL mode.
++ *
++ * PARAMETERS : None
++ *
++ * RETURN     : true -- capture running in non ZSL mode
++ *              false -- Either in not capture mode or captur is not in non ZSL mode
++ *==========================================================================*/
++bool QCameraStateMachine::isNonZSLCaptureRunning()
++{
++    switch (m_state) {
++    case QCAMERA_SM_STATE_PIC_TAKING:
++        return true;
++    default:
++        return false;
++    }
++}
++
+ 
+ }; // namespace qcamera
+diff --git a/QCamera2/HAL/QCameraStateMachine.h b/QCamera2/HAL/QCameraStateMachine.h
+index e9beadc..63c59ff 100644
+--- a/QCamera2/HAL/QCameraStateMachine.h
++++ b/QCamera2/HAL/QCameraStateMachine.h
+@@ -161,6 +161,7 @@ public:
+ 
+     bool isPreviewRunning(); // check if preview is running
+     bool isCaptureRunning(); // check if image capture is running
++    bool isNonZSLCaptureRunning(); // check if image capture is running in non ZSL mode
+ 
+ private:
+     typedef enum {
+-- 
+1.8.3.1
+

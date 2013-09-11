@@ -1,0 +1,36 @@
+From 4404e57c72d90a0d85ac7b05158dd3fa159d1740 Mon Sep 17 00:00:00 2001
+From: Abhishek Pant <apant@codeaurora.org>
+Date: Thu, 22 May 2014 10:32:09 +0530
+Subject: [PATCH 135/176] QCamera2: Fixing Zoom in/out issue in test app
+
+Fixed issue with zoom in and zoom out with
+mm-qcamera-app by handling zoom in and out
+commands corretly.
+
+Change-Id: I8ff752337ac7eec07187aced86ce1bce45d89a27
+Fixed-Crs: 669189
+---
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
+index dd41d85..b45b387 100644
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_main_menu.c
+@@ -570,11 +570,12 @@ int next_menu(menu_id_change_t current_menu_id, char keypress, camera_action_t *
+ 
+     case MENU_ID_ZOOMCHANGE:
+       * action_id_ptr = ACTION_SET_ZOOM;
+-      if (output_to_event > 0 &&
++      if (output_to_event > 1 &&
+         output_to_event <= sizeof(zoom_tbl)/sizeof(zoom_tbl[0])) {
+           next_menu_id = MENU_ID_MAIN;
+           * action_param = output_to_event;
+       } else {
++        *action_param = output_to_event;
+         next_menu_id = current_menu_id;
+       }
+       break;
+-- 
+1.8.3.1
+

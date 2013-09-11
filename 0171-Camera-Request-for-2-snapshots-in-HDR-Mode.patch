@@ -1,0 +1,36 @@
+From 4a9bc60bb48a48ee7c1c42a00614e2c9e76719bd Mon Sep 17 00:00:00 2001
+From: Roja Rani Yarubandi <rojay@codeaurora.org>
+Date: Tue, 23 Jul 2013 13:30:27 +0530
+Subject: [PATCH 171/176] Camera: Request for 2 snapshots in HDR Mode.
+
+Request for 2 snapshots(1x exposure, HDR Processed) images to be
+stored on the SD Card.
+
+Change-Id: I093eb7b817c8e8b888841f06cc80c1936f558c5d
+---
+ QCamera/HAL/core/src/QCameraHWI_Parm.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+index 7882e5b..7fdb4f7 100755
+--- a/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
++++ b/QCamera/HAL/core/src/QCameraHWI_Parm.cpp
+@@ -3542,8 +3542,14 @@ int QCameraHardwareInterface::getNumOfSnapshots(const QCameraParameters& params)
+         ALOGI("%s: Reading maximum no of snapshots = %d"
+              "from properties", __func__, atoi(prop));
+         return atoi(prop);
++    } else if (mHdrMode == HDR_MODE) {
++        mParameters.set("num-snaps-per-shutter", 2);
++        QCameraParameters param = getParameters();
++        return param.getInt("num-snaps-per-shutter");
+     } else {
+-        return params.getInt("num-snaps-per-shutter");
++        mParameters.set("num-snaps-per-shutter", 1);
++        QCameraParameters param = getParameters();
++        return param.getInt("num-snaps-per-shutter");
+     }
+ 
+ }
+-- 
+1.8.3.1
+

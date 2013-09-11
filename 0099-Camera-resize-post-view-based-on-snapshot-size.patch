@@ -1,0 +1,51 @@
+From 07d941eedff9179081357cf80e75ffe94adb38dd Mon Sep 17 00:00:00 2001
+From: Vijay kumar Tumati <vtumati@codeaurora.org>
+Date: Fri, 28 Feb 2014 11:55:11 +0530
+Subject: [PATCH 099/176] Camera: resize post view based on snapshot size
+
+For CTS testPreviewPictureSizesCombination
+
+Change-Id: Ibb7d7e190fb5c84d61eab6f9b287ff94290a7c8a
+---
+ QCamera2/HAL/QCameraParameters.cpp | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/QCamera2/HAL/QCameraParameters.cpp b/QCamera2/HAL/QCameraParameters.cpp
+index a072210..552cb5a 100644
+--- a/QCamera2/HAL/QCameraParameters.cpp
++++ b/QCamera2/HAL/QCameraParameters.cpp
+@@ -5889,6 +5889,31 @@ int32_t QCameraParameters::getStreamDimension(cam_stream_type_t streamType,
+         break;
+     case CAM_STREAM_TYPE_POSTVIEW:
+         getPreviewSize(&dim.width, &dim.height);
++        //For CTS testPreviewPictureSizesCombination
++        int cur_pic_width, cur_pic_height;
++        CameraParameters::getPictureSize(&cur_pic_width, &cur_pic_height);
++        if ((dim.width > cur_pic_width && dim.height < cur_pic_height)
++                || (dim.width < cur_pic_width && dim.height > cur_pic_height)) {
++            size_t k;
++            for (k = 0; k < m_pCapability->preview_sizes_tbl_cnt; ++k) {
++                if (cur_pic_width >= m_pCapability->preview_sizes_tbl[k].width
++                    && cur_pic_height >= m_pCapability->preview_sizes_tbl[k].height) {
++                    dim.width = m_pCapability->preview_sizes_tbl[k].width;
++                    dim.height = m_pCapability->preview_sizes_tbl[k].height;
++                    ALOGE("%s:re-set size, pic_width=%d, pic_height=%d, pre_width=%d,pre_height=%d",
++                            __func__,cur_pic_width,cur_pic_height, dim.width, dim.height);
++                    break;
++                 }
++            }
++            if (k == m_pCapability->preview_sizes_tbl_cnt) {
++                // Assign the Picture size to Preview size
++                dim.width = cur_pic_width;
++                dim.height = cur_pic_height;
++                ALOGE("%s: re-set size, pic_width=%d, pic_height=%d, pre_width=%d, pre_height=%d.",
++                        __func__,cur_pic_width, cur_pic_height, dim.width, dim.height);
++           }
++
++        }
+         break;
+     case CAM_STREAM_TYPE_SNAPSHOT:
+         if (getRecordingHintValue() == true) {
+-- 
+1.8.3.1
+

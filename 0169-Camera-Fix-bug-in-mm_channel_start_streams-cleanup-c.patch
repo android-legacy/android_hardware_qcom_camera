@@ -1,0 +1,47 @@
+From 8230f2b5a7c81ed3f80fc27616173cec395294d2 Mon Sep 17 00:00:00 2001
+From: Lakshmi Narayana Kalavala <lkalaval@codeaurora.org>
+Date: Fri, 24 May 2013 11:26:08 -0700
+Subject: [PATCH 169/176] Camera: Fix bug in mm_channel_start_streams cleanup
+ code
+
+In case of error during start streams, as part of rollback,
+we stop all the streams started so far. In this rollback
+sequence, the index used is incorrect which could potentially
+cause issues. Fix it by correcting the index used.
+
+CRs-Fixed: 489993
+Change-Id: I9d1d066cc0be15ec9e641dcdaa8840c4d425b09f
+---
+ QCamera/stack/mm-camera-interface/src/mm_camera_channel.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c b/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
+index 351c4d6..d6d434c 100755
+--- a/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
++++ b/QCamera/stack/mm-camera-interface/src/mm_camera_channel.c
+@@ -1049,19 +1049,19 @@ int32_t mm_channel_start_streams(mm_channel_t *my_obj,
+     if (0 != rc) {
+         for (j=0; j<=i; j++) {
+             /* stop streams*/
+-            mm_stream_fsm_fn(s_objs[i],
++            mm_stream_fsm_fn(s_objs[j],
+                              MM_STREAM_EVT_STOP,
+                              NULL,
+                              NULL);
+ 
+             /* unreg buf */
+-            mm_stream_fsm_fn(s_objs[i],
++            mm_stream_fsm_fn(s_objs[j],
+                              MM_STREAM_EVT_UNREG_BUF,
+                              NULL,
+                              NULL);
+ 
+             /* put buf back */
+-            mm_stream_fsm_fn(s_objs[i],
++            mm_stream_fsm_fn(s_objs[j],
+                              MM_STREAM_EVT_PUT_BUF,
+                              NULL,
+                              NULL);
+-- 
+1.8.3.1
+

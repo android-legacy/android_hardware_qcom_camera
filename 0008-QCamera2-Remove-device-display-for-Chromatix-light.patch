@@ -1,0 +1,40 @@
+From e72dbd2bd1c6d695c5432ad79d8ef0f388493ce2 Mon Sep 17 00:00:00 2001
+From: Mohit Setia <msetia@codeaurora.org>
+Date: Mon, 16 Sep 2013 15:13:16 +0530
+Subject: [PATCH 008/176] QCamera2: Remove device display for Chromatix light.
+
+Removed call to mmap for device display to bring up Chromatix Light,
+as for 8x10, mmap needs destination address along with source address.
+
+Change-Id: I188b143a707021ecf9bfe337ca1aa00b0b42118e
+---
+ QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+index 0507c56..bc6550a 100755
+--- a/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
++++ b/QCamera2/stack/mm-camera-test/src/mm_qcamera_app.c
+@@ -1950,7 +1950,8 @@ int mm_camera_lib_open(mm_camera_lib_handle *handle, int cam_id)
+         goto EXIT;
+     }
+ 
+-    rc = mm_app_initialize_fb(&handle->test_obj);
++    //rc = mm_app_initialize_fb(&handle->test_obj);
++    rc = MM_CAMERA_OK;
+     if (rc != MM_CAMERA_OK) {
+         CDBG_ERROR("%s: mm_app_initialize_fb() cam_idx=%d, err=%d\n",
+                    __func__, cam_id, rc);
+@@ -2495,7 +2496,8 @@ int mm_camera_lib_close(mm_camera_lib_handle *handle)
+         goto EXIT;
+     }
+ 
+-    rc = mm_app_close_fb(&handle->test_obj);
++    //rc = mm_app_close_fb(&handle->test_obj);
++    rc = MM_CAMERA_OK;
+     if (rc != MM_CAMERA_OK) {
+         CDBG_ERROR("%s:mm_app_close_fb() err=%d\n",
+                    __func__, rc);
+-- 
+1.8.3.1
+
