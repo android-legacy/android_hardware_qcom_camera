@@ -476,6 +476,7 @@ private:
     bool m_HDRSceneEnabled;
     bool mLongshotEnabled;
 
+    uint8_t mFlashNeeded;
 };
 
 }; // namespace qcamera
