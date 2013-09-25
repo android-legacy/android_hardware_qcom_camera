@@ -358,7 +358,15 @@ typedef struct mm_jpeg_obj_t {
   pthread_mutex_t job_lock;                       /* job lock */
   mm_jpeg_job_cmd_thread_t job_mgr;               /* job mgr thread including todo_q*/
   mm_jpeg_queue_t ongoing_job_q;                  /* queue for ongoing jobs */
-  buffer_t ionBuffer;
+  buffer_t ionBuffer[MM_JPEG_CONCURRENT_SESSIONS_COUNT];
+
+
+  int work_buf_cnt;
+
+#ifdef LOAD_ADSP_RPC_LIB
+  void *adsprpc_lib_handle;
+#endif
+
 } mm_jpeg_obj;
 
 /** mm_jpeg_pending_func_t:
