@@ -1436,7 +1436,7 @@ void *QCameraPostProcessor::dataSaveRoutine(void *data)
     QCameraCmdThread *cmdThread = &pme->m_saveProcTh;
     char saveName[PROPERTY_VALUE_MAX];
 
-    ALOGD("%s: E", __func__);
+    ALOGV("%s: E", __func__);
     do {
         do {
             ret = cam_sem_wait(&cmdThread->cmd_sem);
@@ -1451,12 +1451,12 @@ void *QCameraPostProcessor::dataSaveRoutine(void *data)
         camera_cmd_type_t cmd = cmdThread->getCmd();
         switch (cmd) {
         case CAMERA_CMD_TYPE_START_DATA_PROC:
-            ALOGD("%s: start data proc", __func__);
+            ALOGV("%s: start data proc", __func__);
             is_active = TRUE;
             break;
         case CAMERA_CMD_TYPE_STOP_DATA_PROC:
             {
-                ALOGD("%s: stop data proc", __func__);
+                ALOGV("%s: stop data proc", __func__);
                 is_active = FALSE;
 
                 // flush input save Queue
@@ -1544,14 +1544,14 @@ end:
             }
             break;
         case CAMERA_CMD_TYPE_EXIT:
-            ALOGD("%s : save thread exit", __func__);
+            ALOGV("%s : save thread exit", __func__);
             running = 0;
             break;
         default:
             break;
         }
     } while (running);
-    ALOGD("%s: X", __func__);
+    ALOGV("%s: X", __func__);
     return NULL;
 }
 
@@ -1576,7 +1576,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
     QCameraPostProcessor *pme = (QCameraPostProcessor *)data;
     QCameraCmdThread *cmdThread = &pme->m_dataProcTh;
 
-    ALOGD("%s: E", __func__);
+    ALOGV("%s: E", __func__);
     do {
         do {
             ret = cam_sem_wait(&cmdThread->cmd_sem);
@@ -1591,7 +1591,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
         camera_cmd_type_t cmd = cmdThread->getCmd();
         switch (cmd) {
         case CAMERA_CMD_TYPE_START_DATA_PROC:
-            ALOGD("%s: start data proc", __func__);
+            ALOGV("%s: start data proc", __func__);
             is_active = TRUE;
             needNewSess = TRUE;
             pme->m_saveProcTh.sendCmd(CAMERA_CMD_TYPE_START_DATA_PROC,
@@ -1600,7 +1600,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
             break;
         case CAMERA_CMD_TYPE_STOP_DATA_PROC:
             {
-                ALOGD("%s: stop data proc", __func__);
+                ALOGV("%s: stop data proc", __func__);
                 is_active = FALSE;
 
                 pme->m_saveProcTh.sendCmd(CAMERA_CMD_TYPE_STOP_DATA_PROC,
@@ -1661,7 +1661,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
             break;
         case CAMERA_CMD_TYPE_DO_NEXT_JOB:
             {
-                ALOGD("%s: Do next job, active is %d", __func__, is_active);
+                ALOGV("%s: Do next job, active is %d", __func__, is_active);
                 if (is_active == TRUE) {
                     // check if there is any ongoing jpeg jobs
                     if (pme->m_ongoingJpegQ.isEmpty()) {
@@ -1767,7 +1767,7 @@ void *QCameraPostProcessor::dataProcessRoutine(void *data)
             break;
         }
     } while (running);
-    ALOGD("%s: X", __func__);
+    ALOGV("%s: X", __func__);
     return NULL;
 }
 
