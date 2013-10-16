@@ -314,6 +314,9 @@ private:
     int getJpegQuality();
     int getJpegRotation();
     void getOrientation();
+    inline int getFlash(){ return mFlash; }
+    inline int getFlashPresence(){ return mFlashPresence; }
+    inline int getRedeye(){ return mRedEye; }
     QCameraExif *getExifData();
 
     int32_t processAutoFocusEvent(cam_auto_focus_data_t &focus_data);
@@ -479,6 +482,9 @@ private:
 
     uint8_t mFlashNeeded;
     int mCaptureRotation;
+    int32_t mFlash;
+    int32_t mRedEye;
+    int32_t mFlashPresence;
 };
 
 }; // namespace qcamera
