@@ -1401,6 +1401,8 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
  * PARAMETERS :
  *   @stream_type  : type of stream
  *   @size         : size of buffer
+ *   @stride       : stride of buffer
+ *   @scanline     : scanline of buffer
  *   @bufferCnt    : [IN/OUT] minimum num of buffers to be allocated.
  *                   could be modified during allocation if more buffers needed
  *
@@ -1409,6 +1411,8 @@ uint8_t QCamera2HardwareInterface::getBufNumRequired(cam_stream_type_t stream_ty
  *==========================================================================*/
 QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t stream_type,
                                                             int size,
+                                                            int stride,
+                                                            int scanline,
                                                             uint8_t &bufferCnt)
 {
     int rc = NO_ERROR;
@@ -1428,8 +1432,9 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
 
                 mParameters.getStreamDimension(stream_type, dim);
                 if (grallocMemory)
-                    grallocMemory->setWindowInfo(mPreviewWindow, dim.width, dim.height,
-                            mParameters.getPreviewHalPixelFormat());
+                    grallocMemory->setWindowInfo(mPreviewWindow, dim.width,
+                        dim.height, stride, scanline,
+                        mParameters.getPreviewHalPixelFormat());
                 mem = grallocMemory;
             }
         }
@@ -1442,8 +1447,9 @@ QCameraMemory *QCamera2HardwareInterface::allocateStreamBuf(cam_stream_type_t st
 
             mParameters.getStreamDimension(stream_type, dim);
             if (grallocMemory)
-                grallocMemory->setWindowInfo(mPreviewWindow, dim.width, dim.height,
-                        mParameters.getPreviewHalPixelFormat());
+                grallocMemory->setWindowInfo(mPreviewWindow, dim.width,
+                    dim.height, stride, scanline,
+                    mParameters.getPreviewHalPixelFormat());
             mem = grallocMemory;
         }
         break;
