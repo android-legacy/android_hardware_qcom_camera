@@ -305,6 +305,7 @@ private:
 
     bool needDebugFps();
     bool isCACEnabled();
+    bool isAFRunning();
     bool needReprocess();
     bool needRotationReprocess();
     bool needScaleReprocess();
