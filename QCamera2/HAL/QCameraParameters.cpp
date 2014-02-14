@@ -2639,6 +2639,8 @@ int32_t QCameraParameters::setSceneMode(const QCameraParameters& params)
                 m_bHDREnabled = false;
             }
 
+            enableFlash(!m_bHDREnabled, false);
+
             if ((m_bHDREnabled) ||
                 ((prev_str != NULL) && (strcmp(prev_str, SCENE_MODE_HDR) == 0))) {
                 ALOGD("%s: scene mode changed between HDR and non-HDR, need restart", __func__);
@@ -2655,8 +2657,6 @@ int32_t QCameraParameters::setSceneMode(const QCameraParameters& params)
 
                     updateParamEntry(KEY_QC_HDR_NEED_1X, need_hdr_1x);
                 }
-
-                enableFlash(!m_bHDREnabled);
 
                 AddSetParmEntryToBatch(m_pParamBuf,
                                        CAM_INTF_PARM_HDR_NEED_1X,
@@ -5446,13 +5446,7 @@ int32_t QCameraParameters::setHDRAEBracket(cam_exp_bracketing_t hdrBracket)
  *==========================================================================*/
 int32_t QCameraParameters::restoreAEBracket()
 {
-    int32_t rc = enableFlash(true);
-
-    if (NO_ERROR == rc) {
-      rc = setHDRAEBracket(m_AEBracketingClient);
-    }
-
-    return rc;
+  return setHDRAEBracket(m_AEBracketingClient);
 }
 
 /*===========================================================================
@@ -5462,22 +5456,26 @@ int32_t QCameraParameters::restoreAEBracket()
  *
  * PARAMETERS :
  *   @enableFlash : enable flash
+ *   @commitSettings : flag indicating whether settings need to be commited
  *
  * RETURN     : int32_t type of status
  *              NO_ERROR  -- success
  *              none-zero failure code
  *==========================================================================*/
-int32_t QCameraParameters::enableFlash(bool bflag)
+int32_t QCameraParameters::enableFlash(bool enableFlash, bool commitSettings)
 {
     int32_t rc = NO_ERROR;
-    if(initBatchUpdate(m_pParamBuf) < 0 ) {
-        ALOGE("%s:Failed to initialize group update table", __func__);
-        return BAD_TYPE;
+
+    if (commitSettings) {
+      if(initBatchUpdate(m_pParamBuf) < 0 ) {
+          ALOGE("%s:Failed to initialize group update table", __func__);
+          return BAD_TYPE;
+      }
     }
 
     const char *str = get(KEY_FLASH_MODE);
 
-    if (!bflag) {
+    if (!enableFlash) {
         str = FLASH_MODE_OFF;
     }
 
@@ -5493,7 +5491,8 @@ int32_t QCameraParameters::enableFlash(bool bflag)
                                       sizeof(value),
                                       &value);
         if (rc != NO_ERROR) {
-           ALOGE("%s:Failed to set led mode", __func__);
+          rc = BAD_VALUE;
+          ALOGE("%s:Failed to set led mode", __func__);
           return rc;
         }
     } else {
@@ -5501,10 +5500,12 @@ int32_t QCameraParameters::enableFlash(bool bflag)
         return rc;
     }
 
-    rc = commitSetBatch();
-    if (rc != NO_ERROR) {
-        ALOGE("%s:Failed to configure HDR bracketing", __func__);
-        return rc;
+    if (commitSettings) {
+      rc = commitSetBatch();
+      if (rc != NO_ERROR) {
+          ALOGE("%s:Failed to configure HDR bracketing", __func__);
+          return rc;
+      }
     }
 
     return rc;
@@ -6894,7 +6895,7 @@ void QCameraParameters::setHDRSceneEnable(bool bflag)
     m_HDRSceneEnabled = bflag;
 
     if (bupdate) {
-        enableFlash(!isHDREnabled());
+        enableFlash(!isHDREnabled(), true);
     }
 }
 
