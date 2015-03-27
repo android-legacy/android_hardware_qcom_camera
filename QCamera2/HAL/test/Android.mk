@@ -30,7 +30,13 @@ LOCAL_C_INCLUDES += \
     frameworks/base/include/surfaceflinger \
     frameworks/base/include/camera \
     frameworks/base/include/media \
+    $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 
+ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
+    LOCAL_C_INCLUDES        += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
+else
+    LOCAL_C_INCLUDES        += hardware/qcom/display/libgralloc
+endif
 LOCAL_MODULE:= camera_test
 LOCAL_MODULE_TAGS:= tests
 
