@@ -30,9 +30,20 @@ endif
 
 LOCAL_C_INCLUDES := \
         $(LOCAL_PATH)/../stack/common \
-        frameworks/native/include/media/openmax \
-        hardware/qcom/display/libgralloc \
-        hardware/qcom/media/libstagefrighthw \
+        frameworks/native/include/media/openmax
+
+ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
+    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
+else
+    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+endif
+ifneq ($(TARGET_QCOM_MEDIA_VARIANT),)
+    LOCAL_C_INCLUDES += hardware/qcom/media-$(TARGET_QCOM_MEDIA_VARIANT)/libstagefrighthw
+else
+    LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
+endif
+
+LOCAL_C_INCLUDES := \
         $(LOCAL_PATH)/../../mm-image-codec/qexif \
         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
         $(LOCAL_PATH)/../util \
@@ -45,9 +56,17 @@ LOCAL_CFLAGS += -DUSE_KK_CODE
 endif
 
 ifeq ($(TARGET_USE_VENDOR_CAMERA_EXT),true)
-LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
+ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)
+    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/msm8974/libgralloc
 else
-LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+    LOCAL_C_INCLUDES += hardware/qcom/display/msm8974/libgralloc
+endif
+else
+ifneq ($(TARGET_QCOM_DISPLAY_VARIANT),)  
+    LOCAL_C_INCLUDES += hardware/qcom/display-$(TARGET_QCOM_DISPLAY_VARIANT)/libgralloc
+else
+    LOCAL_C_INCLUDES += hardware/qcom/display/libgralloc
+endif
 endif
 LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/media
