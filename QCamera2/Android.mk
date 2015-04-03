@@ -7,8 +7,8 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
         util/QCameraCmdThread.cpp \
         util/QCameraQueue.cpp \
-        QCamera2Hal.cpp \
-        QCamera2Factory.cpp
+        HAL/QCamera2Hal.cpp \
+        HAL/QCamera2Factory.cpp
 
 #HAL 3.0 source
 LOCAL_SRC_FILES += \
