@@ -43,7 +43,7 @@ else
     LOCAL_C_INCLUDES += hardware/qcom/media/libstagefrighthw
 endif
 
-LOCAL_C_INCLUDES := \
+LOCAL_C_INCLUDES += \
         $(LOCAL_PATH)/../../mm-image-codec/qexif \
         $(LOCAL_PATH)/../../mm-image-codec/qomx_core \
         $(LOCAL_PATH)/../util \
