@@ -267,12 +267,7 @@ static int encode_test(jpeg_test_input_t *p_input)
     return -1;
   }
 
-  mm_dimension pic_size;
-  memset(&pic_size, 0, sizeof(mm_dimension));
-  pic_size.w = 4000;
-  pic_size.h = 3000;
-
-  jpeg_obj.handle = jpeg_open(&jpeg_obj.ops, pic_size);
+  jpeg_obj.handle = jpeg_open(&jpeg_obj.ops);
   if (jpeg_obj.handle == 0) {
     CDBG_ERROR("%s:%d] Error",__func__, __LINE__);
     goto end;

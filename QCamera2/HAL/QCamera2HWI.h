@@ -481,8 +481,6 @@ private:
 
 #endif
 
-    int32_t m_max_pic_width;
-    int32_t m_max_pic_height;
 };
 
 }; // namespace qcamera
